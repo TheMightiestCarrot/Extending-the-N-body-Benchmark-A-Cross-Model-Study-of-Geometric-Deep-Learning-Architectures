@@ -1,0 +1,14 @@
+{
+  "comment": "Maximum checkpoint number reached within 8 hours of training (from wandb)",
+  "runs/cgenn/2025-10-01_03-31-26": 20,
+  "runs/cgenn/2025-10-01_03-34-34": 10,
+  "runs/segnn/2025-09-30_03-23-40": 220,
+  "runs/segnn/2025-09-30_05-21-25": 140,
+  "runs/ponita/2025-10-03_00-05-28": 920,
+  "runs/ponita/2025-09-29_12-31-52": 830,
+  "runs/equiformer_v2/2025-10-02_23-59-51": 210,
+  "runs/equiformer_v2/2025-10-01_14-19-00": 150,
+  "runs/graph_transformer/2025-10-01_03-10-47": 990,
+  "runs/graph_transformer/2025-10-01_03-16-16": 990
+}
+

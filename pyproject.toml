@@ -1,0 +1,39 @@
+[tool.pyright]
+# Exclude paths from analysis to improve Pylance performance
+# These folders remain visible in the file browser
+exclude = [
+    "runs",
+    "saved_simulations",
+    "wandb",
+    "datasets",
+    "correlations",
+    "baseline_metamacros",
+    "data",
+    "**/__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    ".git",
+    "build",
+    "dist",
+    "*.mp4",
+    "*.h5",
+    "*.hdf5",
+    "models/ponita/geometry/.grid_cache"
+]
+
+# Note: Large data files (*.npy, *.pkl, *.pth) are NOT excluded
+# so Pylance can still analyze Python files that work with them
+
+# Pyright/Pylance type checking settings
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+pythonVersion = "3.10"
+
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+[tool.ruff]
+line-length = 80

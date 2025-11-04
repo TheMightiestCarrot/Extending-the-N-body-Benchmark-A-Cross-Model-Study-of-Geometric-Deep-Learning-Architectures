@@ -1,0 +1,24 @@
+# generator.yaml
+# This file defines the Conda environment for the HEAVYWEIGHT asset generator.
+name: generator-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+
+  # For generating initial conformers and charges
+  - ambertools=23
+  - rdkit
+
+  # For system building and parameterization (NEW)
+  - openff-interchange
+  - openmm
+  - packmol
+
+  # OpenFF Toolkit is the core dependency
+  - openff-toolkit
+  - h5py
+
+  - openmmforcefields
+
+  - pip

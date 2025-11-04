@@ -1,0 +1,9 @@
+[MASTER]
+ignore-patterns=
+init-hook='import sys; import os; sys.path.append(os.path.expanduser("~/repos/n_body_approx"))'
+
+[MESSAGE CONTROL]
+disable=C0103,C0111,C0301,C0325,C0326,C0330,C0411,C0412,W0611,W1514
+
+[FORMAT]
+max-line-length=80

@@ -1,0 +1,145 @@
+main:
+  model_type: ponita
+  dataloader_type: ponita_nbody
+  trainer_type: trainer_nbody
+  gpu_id: auto
+
+models:
+  graph_transformer:
+    class_path: models.graph_transformer.graph_transformer_torch.GraphTransformerTorch
+    hidden_features: 96
+    num_layers: 4
+    graph_transformer_num_heads: 4
+  cgenn:
+    class_path: models.CGENN.nbody_cgenn.NBodyCGENN
+    hidden_features: 96
+    num_layers: 4
+
+  ponita:
+    class_path: models.PONITA_NBODY
+    hidden_features: 128
+    num_layers: 8
+
+  segnn:
+    class_path: models.SEGNN
+    hidden_features: 96
+    lmax_attr: 1
+    lmax_h: 1
+    num_layers: 20
+    normalization_type: null
+
+  equiformer_v2:
+    class_path: models.equiformer_v2.architecture.equiformer_v2_nbody.EquiformerV2_nbody
+    use_pbc: False
+    max_neighbors: 5
+    max_radius: 4096.0
+    num_layers: 4
+    attn_hidden_channels: 64
+    sphere_channels: 64
+    num_heads: 4
+    attn_alpha_channels: 8
+    attn_value_channels: 4
+    ffn_hidden_channels: 64
+    lmax_list: [2]
+    mmax_list: [1]
+    grid_resolution: null
+    edge_channels: 64
+    use_atom_edge_embedding: True
+    share_atom_edge_embedding: False
+    distance_function: "projection"
+    num_distance_basis: 64
+    attn_activation: "scaled_silu"
+    use_s2_act_attn: False
+    ffn_activation: "scaled_silu"
+
+dataloaders:
+  graph_transformer_nbody:
+    class_path: dataloaders.GraphTransformerNBodyDataLoader
+    batch_size: 64
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+  
+  ponita_nbody:
+    class_path: dataloaders.PonitaNBodyDataLoader
+    batch_size: 64
+    double_precision: True
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+    model_path: null
+    num_neighbors: 4
+
+  segnn_nbody:
+    class_path: dataloaders.SegnnNBodyDataLoader
+    batch_size: 64 
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+    num_neighbors: 4
+    dataset_name: nbody_small
+
+  segnn_nbody_offline:
+    class_path: dataloaders.SegnnNbodyOfflineDataloader
+    batch_size: 64
+    dataset_name: nbody_small
+    data_directory: datasets/nbody_offline/data
+    virtual_channels: 1
+    max_samples: 100
+    frame_0: 30
+    frame_T: 40
+    cutoff_rate: 0.0
+    target: pos_dt+vel
+
+
+  cgenn_nbody:
+    class_path: dataloaders.CgennNBodyDataLoader
+    batch_size: 64
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+
+  equiformer_v2_nbody:
+    class_path: dataloaders.EquiformerV2NBodyDataLoader
+    batch_size: 64
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+    max_neighbors: 5
+    max_radius: 4096.0
+
+  
+trainers:
+  trainer_nbody:
+    class_path: trainer.Trainer
+    com_loss: False
+    precision_mode: double
+    energy_loss: False
+    momentum_loss: False
+    momentum_loss_weight: 0.0001
+    per_atom_loss: False
+    learning_rate: 0.5
+    learning_rate_factor: 1.0
+    run_name: null
+    save_model_every: 10
+    steps_per_epoch: 1000
+    test_macros_every: 1
+    train_steps: null
+    validation:
+      do_validation: False
+

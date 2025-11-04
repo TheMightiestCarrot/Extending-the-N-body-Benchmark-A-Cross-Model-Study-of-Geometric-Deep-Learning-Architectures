@@ -1,0 +1,11 @@
+size,model,best_checkpoint,best_p_value,time_to_p_ge_0.05
+≈2M,Graph Transformer,740,0.00018295,
+≈2M,CGENN,20,1.81353e-93,
+≈2M,EquiformerV2,120,0.236026,70
+≈2M,Ponita,860,0.999994,60
+≈2M,SEGNN,60,1.88184e-05,
+≈10M,Graph Transformer,870,0.00691118,
+≈10M,CGENN,10,5.00665e-100,
+≈10M,EquiformerV2,130,0.0820575,130
+≈10M,Ponita,470,0.996496,200
+≈10M,SEGNN,130,0.170252,90
