@@ -2,7 +2,7 @@ import importlib
 
 from e3nn.o3 import Irreps
 
-from models import PONITA_NBODY, SEGNN, GraphTransformerTorch
+from models import PONITA_NBODY, SEGNN, GraphTransformerTorch, PaiNN
 from models.CGENN.nbody_cgenn import NBodyCGENN
 from models.equiformer_v2.architecture.equiformer_v2_nbody import (
     EquiformerV2_nbody,
@@ -80,6 +80,19 @@ def create_model(args, train_dataloader=None):
             num_layers=getattr(args, "num_layers", 4),
             num_heads=getattr(args, "graph_transformer_num_heads", 4),
             args=args,
+        )
+    elif args.model_type == "painn":
+        targets = tuple(
+            args.target.split("+")
+        ) if hasattr(args, "target") and isinstance(args.target, str) else ("pos_dt", "vel")
+        model = PaiNN(
+            hidden_features=getattr(args, "hidden_features", 128),
+            num_layers=getattr(args, "num_layers", 6),
+            num_rbf=getattr(args, "num_rbf", 64),
+            cutoff=getattr(args, "cutoff", 10.0),
+            targets=targets,
+            use_velocity_input=getattr(args, "use_velocity_input", True),
+            include_velocity_norm=getattr(args, "include_velocity_norm", True),
         )
     else:
         raise ValueError(f"Unknown model {args.model_type}")

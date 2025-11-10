@@ -90,6 +90,21 @@ class GraphTransformerModelConfig(BaseConfig):
     num_layers: int = Field(4)
     graph_transformer_num_heads: int = Field(4)
 
+
+class PaiNNModelConfig(BaseConfig):
+    name: Literal["painn"] = "painn"
+    class_path: str = Field("models.PaiNN.PaiNN.PaiNN")
+    hidden_features: int = Field(128, description="Hidden latent channels")
+    num_layers: int = Field(6, description="Number of PaiNN interaction blocks")
+    num_rbf: int = Field(64, description="Number of radial basis functions")
+    cutoff: float = Field(10.0, description="Distance cutoff for filters")
+    use_velocity_input: bool = Field(
+        True, description="Use current velocities as equivariant input"
+    )
+    include_velocity_norm: bool = Field(
+        True, description="Append |v| to scalar features"
+    )
+
 class GravityDatasetOtfConfig(BaseModel):
     dataset_name: str = Field(..., description="Name of the dataset")
     num_atoms: int = Field(5, description="Number of atoms")
@@ -131,6 +146,7 @@ MODEL_CONFIG_NAMES = {
     "cgenn": CGENNModelConfig,
     "equiformer_v2": EquiformerV2Config,
     "graph_transformer": GraphTransformerModelConfig,
+    "painn": PaiNNModelConfig,
 }
 
 class CgennNBodyDataLoaderConfig(BaseConfig):
@@ -156,6 +172,19 @@ class GraphTransformerNBodyDataLoaderConfig(BaseConfig):
     gravity_dataset: GravityDatasetOtfConfig = Field(...)
 
 
+class PaiNNNBodyDataLoaderConfig(BaseConfig):
+    name: Literal["painn_nbody"] = "painn_nbody"
+    class_path: str = Field("dataloaders.PaiNNNBodyDataLoader")
+    batch_size: int = Field(128, description="Batch size for PaiNN training")
+    num_neighbors: int = Field(4, description="Number of neighbours per node")
+    gravity_dataset: GravityDatasetOtfConfig = Field(
+        ..., description="Gravity dataset configuration"
+    )
+    model_path: Optional[str] = Field(None, description="Optional checkpoint path")
+
+    model_config = {"protected_namespaces": ()}
+
+
 class SegnnNbodyOfflineDataLoaderConfig(BaseConfig):
     """Offline N-body dataset config for SEGNN."""
 
@@ -178,6 +207,7 @@ DATALOADER_CONFIG_NAMES = {
     "cgenn_nbody": CgennNBodyDataLoaderConfig,
     "equiformer_v2_nbody": EquiformerV2NBodyDataLoaderConfig,
     "graph_transformer_nbody": GraphTransformerNBodyDataLoaderConfig,
+    "painn_nbody": PaiNNNBodyDataLoaderConfig,
 }
 
 
