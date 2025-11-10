@@ -40,16 +40,11 @@ class GaussianRBF(nn.Module):
             self.offsets = nn.Parameter(offsets)
             self.widths = nn.Parameter(widths)
         else:
-            self.register_buffer("offsets", offsets, persistent=False)
-            self.register_buffer("widths", widths, persistent=False)
+            self.register_buffer("offsets", offsets)
+            self.register_buffer("widths", widths)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        offsets = self.offsets
-        widths = self.widths
-        if not getattr(offsets, "requires_grad", False):
-            offsets = offsets.to(device=inputs.device, dtype=inputs.dtype)
-            widths = widths.to(device=inputs.device, dtype=inputs.dtype)
-        return gaussian_rbf(inputs, offsets, widths)
+        return gaussian_rbf(inputs, self.offsets, self.widths)
 
 
 def cosine_cutoff(input_tensor: torch.Tensor, cutoff: torch.Tensor) -> torch.Tensor:
@@ -63,38 +58,26 @@ class CosineCutoff(nn.Module):
 
     def __init__(self, cutoff: float):
         super().__init__()
-        self.register_buffer(
-            "cutoff", torch.tensor([cutoff], dtype=torch.float32), persistent=False
-        )
+        self.register_buffer("cutoff", torch.tensor([cutoff], dtype=torch.float32))
 
     def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
-        cutoff = self.cutoff.to(input_tensor.dtype)
-        return cosine_cutoff(input_tensor, cutoff)
+        return cosine_cutoff(input_tensor, self.cutoff)
 
 
 class EquivariantLinear(nn.Module):
     """Linear layer acting on the feature dimension of vector features."""
 
-    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+    def __init__(self, in_features: int, out_features: int):
         super().__init__()
         self.weight = nn.Parameter(torch.empty(in_features, out_features))
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(out_features))
-        else:
-            self.register_parameter("bias", None)
         self.reset_parameters()
 
     def reset_parameters(self):
         nn.init.xavier_uniform_(self.weight)
-        if self.bias is not None:
-            nn.init.zeros_(self.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (N, 3, F_in)
-        out = torch.einsum("ncf,fo->nco", x, self.weight)
-        if self.bias is not None:
-            out = out + self.bias.view(1, 1, -1)
-        return out
+        return torch.einsum("ncf,fo->nco", x, self.weight)
 
 
 class PaiNNInteraction(nn.Module):
