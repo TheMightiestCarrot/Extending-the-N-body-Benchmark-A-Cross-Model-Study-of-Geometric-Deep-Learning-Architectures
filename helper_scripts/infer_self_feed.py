@@ -158,6 +158,16 @@ def run_inference(
             graph.batch = batch.long()
             graph = graph.to(device)
             pred = model(graph)
+        elif model_type == "egnn_mc":
+            if dataloader is None:
+                raise ValueError(
+                    "EGNNMultiChannel inference requires an initialized dataloader."
+                )
+            loc, vel, force, mass = data
+            graph = Data(pos=loc, vel=vel, force=force, mass=mass)
+            graph.batch = batch.long()
+            graph = dataloader.preprocess_batch(graph, device=device, training=False)
+            pred = model(graph)
         else:
             data = (data[0], data[1], data[2], data[3], data[0])
             data = tuple(d for d in data)

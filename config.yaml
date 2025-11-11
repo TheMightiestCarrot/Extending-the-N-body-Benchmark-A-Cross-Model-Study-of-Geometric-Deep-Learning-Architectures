@@ -33,7 +33,7 @@ models:
     hidden_features: 192
     num_layers: 6
     num_rbf: 64
-    cutoff: 4096.0
+    cutoff: 10.0
     use_velocity_input: True
     include_velocity_norm: True
 

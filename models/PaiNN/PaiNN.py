@@ -135,6 +135,12 @@ class PaiNNInteraction(nn.Module):
             reduce="sum",
         )
 
+        # Degree normalization (mean aggregation)
+        # Compute in-degree per receiver and divide messages to stabilize training.
+        deg = torch.bincount(target, minlength=num_nodes).clamp(min=1)
+        scalar_msg = scalar_msg / deg.view(-1, 1)
+        vector_msg = vector_msg / deg.view(-1, 1, 1)
+
         q = q + scalar_msg
         mu = mu + vector_msg
         return q, mu

@@ -42,17 +42,19 @@ For each edge $(i \leftarrow j)$:
 * **Gate by filter:** $\tilde{\mathbf{x}}_{ij} = \mathbf{W}_{ij} \odot \mathbf{x}_j$.
 * **Split:** $\tilde{\mathbf{x}}_{ij}^{(q)}, \tilde{\mathbf{x}}_{ij}^{(R)}, \tilde{\mathbf{x}}_{ij}^{(\mu)} \in \mathbb{R}^{F}$.
 
-Aggregate to the receiver $i$ (scatter-add over neighbors):
+Aggregate to the receiver $i$ (degree-normalized mean over neighbors):
 
 * **Scalar message (to $q_i$):**
-  $$\Delta q_i^{\text{(m)}} = \sum_{j \in \mathcal{N}(i)} \tilde{\mathbf{x}}_{ij}^{(q)}.$$
+  $$\Delta q_i^{\text{(m)}} = \frac{1}{|\mathcal{N}(i)|} \sum_{j \in \mathcal{N}(i)} \tilde{\mathbf{x}}_{ij}^{(q)}.$$
 * **Vector message (to $\boldsymbol{\mu}_i$):**
   $$
-  \Delta \boldsymbol{\mu}_i^{\text{(m)}} = \sum_{j \in \mathcal{N}(i)} \left(
+  \Delta \boldsymbol{\mu}_i^{\text{(m)}} = \frac{1}{|\mathcal{N}(i)|} \sum_{j \in \mathcal{N}(i)} \left(
   \tilde{\mathbf{x}}_{ij}^{(R)} \otimes \hat{\mathbf{r}}_{ij}
   + \tilde{\mathbf{x}}_{ij}^{(\mu)} \odot \boldsymbol{\mu}_j
   \right).
   $$
+
+Note: While the original PaiNN uses neighbor summation, for the N-body rollout targets (per-node `pos_dt` and `vel`) normalizing by the in-degree empirically stabilizes training without affecting equivariance. This matches the EGNN coordinate update, which averages over neighbors.
   (First term injects **new** directional info via $\hat{\mathbf{r}}_{ij}$; second term **propagates** existing equivariant info $\boldsymbol{\mu}_j$ across the graph.)
 
 Residual update:
