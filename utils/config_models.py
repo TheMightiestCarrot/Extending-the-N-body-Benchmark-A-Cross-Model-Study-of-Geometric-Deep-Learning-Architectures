@@ -105,6 +105,22 @@ class PaiNNModelConfig(BaseConfig):
         True, description="Append |v| to scalar features"
     )
 
+
+class EgnnMcModelConfig(BaseConfig):
+    name: Literal["egnn_mc"] = "egnn_mc"
+    class_path: str = Field("models.egnn_mc.egnn_mc.EGNNMultiChannel")
+    num_layers: int = Field(6, description="Number of equivariant blocks")
+    hidden_node_dim: int = Field(192, description="Hidden width for node MLPs")
+    hidden_edge_dim: int = Field(192, description="Hidden width for edge MLPs")
+    hidden_coord_dim: int = Field(128, description="Hidden width for coordinate MLPs")
+    node_input_dim: int = Field(2, description="Number of scalar node inputs")
+    edge_attr_dim: int = Field(4, description="Number of edge attributes")
+    activation: str = Field("silu", description="Activation function name")
+    coords_weight: float = Field(1.0, description="Scaling for coordinate deltas")
+    recurrent: bool = Field(True, description="Use residual connection on nodes")
+    norm_diff: bool = Field(False, description="Normalise coordinate differences")
+    tanh: bool = Field(False, description="Clamp coordinate deltas with tanh")
+
 class GravityDatasetOtfConfig(BaseModel):
     dataset_name: str = Field(..., description="Name of the dataset")
     num_atoms: int = Field(5, description="Number of atoms")
@@ -147,6 +163,7 @@ MODEL_CONFIG_NAMES = {
     "equiformer_v2": EquiformerV2Config,
     "graph_transformer": GraphTransformerModelConfig,
     "painn": PaiNNModelConfig,
+    "egnn_mc": EgnnMcModelConfig,
 }
 
 class CgennNBodyDataLoaderConfig(BaseConfig):
@@ -200,6 +217,19 @@ class SegnnNbodyOfflineDataLoaderConfig(BaseConfig):
     target: str = Field("pos_dt+vel", description="Training target for SEGNN")
 
 
+class EgnnMcNBodyDataLoaderConfig(BaseConfig):
+    name: Literal["egnn_mc_nbody"] = "egnn_mc_nbody"
+    class_path: str = Field("dataloaders.EgnnMcNBodyDataLoader")
+    batch_size: int = Field(128, description="Batch size for training")
+    num_neighbors: Optional[int] = Field(
+        None,
+        description="Number of neighbours per node (None falls back to fully connected)",
+    )
+    gravity_dataset: GravityDatasetOtfConfig = Field(
+        ..., description="Gravity dataset config"
+    )
+
+
 DATALOADER_CONFIG_NAMES = {
     "ponita_nbody": PonitaNBodyDataLoaderConfig,
     "segnn_nbody": SegnnNBodyDataLoaderConfig,
@@ -208,6 +238,7 @@ DATALOADER_CONFIG_NAMES = {
     "equiformer_v2_nbody": EquiformerV2NBodyDataLoaderConfig,
     "graph_transformer_nbody": GraphTransformerNBodyDataLoaderConfig,
     "painn_nbody": PaiNNNBodyDataLoaderConfig,
+    "egnn_mc_nbody": EgnnMcNBodyDataLoaderConfig,
 }
 
 

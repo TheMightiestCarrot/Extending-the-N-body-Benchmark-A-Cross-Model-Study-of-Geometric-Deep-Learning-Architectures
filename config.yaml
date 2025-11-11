@@ -37,6 +37,20 @@ models:
     use_velocity_input: True
     include_velocity_norm: True
 
+  egnn_mc:
+    class_path: models.egnn_mc.egnn_mc.EGNNMultiChannel
+    num_layers: 6
+    hidden_node_dim: 128
+    hidden_edge_dim: 128
+    hidden_coord_dim: 128
+    node_input_dim: 2
+    edge_attr_dim: 4
+    activation: silu
+    coords_weight: 1.0
+    recurrent: true
+    norm_diff: false
+    tanh: false
+
   equiformer_v2:
     class_path: models.equiformer_v2.architecture.equiformer_v2_nbody.EquiformerV2_nbody
     use_pbc: False
@@ -143,6 +157,17 @@ dataloaders:
       sample_freq: 10
       target: pos_dt+vel
     model_path: null
+
+  egnn_mc_nbody:
+    class_path: dataloaders.EgnnMcNBodyDataLoader
+    batch_size: 64
+    num_neighbors: null
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
 
   
 trainers:

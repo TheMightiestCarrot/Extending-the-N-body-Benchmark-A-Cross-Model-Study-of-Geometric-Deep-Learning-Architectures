@@ -2,7 +2,13 @@ import importlib
 
 from e3nn.o3 import Irreps
 
-from models import PONITA_NBODY, SEGNN, GraphTransformerTorch, PaiNN
+from models import (
+    EGNNMultiChannel,
+    PONITA_NBODY,
+    SEGNN,
+    GraphTransformerTorch,
+    PaiNN,
+)
 from models.CGENN.nbody_cgenn import NBodyCGENN
 from models.equiformer_v2.architecture.equiformer_v2_nbody import (
     EquiformerV2_nbody,
@@ -93,6 +99,27 @@ def create_model(args, train_dataloader=None):
             targets=targets,
             use_velocity_input=getattr(args, "use_velocity_input", True),
             include_velocity_norm=getattr(args, "include_velocity_norm", True),
+        )
+    elif args.model_type == "egnn_mc":
+        targets = tuple(
+            args.target.split("+")
+        ) if hasattr(args, "target") and isinstance(args.target, str) else ("pos_dt", "vel")
+        if not targets:
+            raise ValueError("EGNNMultiChannel requires at least one target name.")
+        model = EGNNMultiChannel(
+            node_input_dim=getattr(args, "node_input_dim", 2),
+            edge_attr_dim=getattr(args, "edge_attr_dim", 4),
+            hidden_node_dim=getattr(args, "hidden_node_dim", getattr(args, "hidden_features", 128)),
+            hidden_edge_dim=getattr(args, "hidden_edge_dim", getattr(args, "hidden_features", 128)),
+            hidden_coord_dim=getattr(args, "hidden_coord_dim", getattr(args, "hidden_features", 128)),
+            num_layers=getattr(args, "num_layers", 4),
+            target_names=targets,
+            activation=getattr(args, "activation", "silu"),
+            coords_weight=getattr(args, "coords_weight", 1.0),
+            recurrent=getattr(args, "recurrent", True),
+            norm_diff=getattr(args, "norm_diff", False),
+            tanh=getattr(args, "tanh", False),
+            device=get_device(args.gpu_id),
         )
     else:
         raise ValueError(f"Unknown model {args.model_type}")

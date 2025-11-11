@@ -156,7 +156,7 @@ class PaiNNMixing(nn.Module):
         mu_cat = self.vec_linear(mu)
         mu_v, mu_w = mu_cat.chunk(2, dim=-1)
 
-        mu_v_norm = torch.linalg.norm(mu_v, dim=1)
+        mu_v_norm = torch.sqrt((mu_v**2).sum(dim=1) + 1e-8)
         scalar_input = torch.cat([q, mu_v_norm], dim=-1)
         delta = self.scalar_mlp(scalar_input)
         dq, dmu_scale, dqmu = delta.chunk(3, dim=-1)
