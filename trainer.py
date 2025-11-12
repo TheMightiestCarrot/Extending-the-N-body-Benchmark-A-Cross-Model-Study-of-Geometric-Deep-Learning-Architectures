@@ -248,6 +248,17 @@ class Trainer:
             self.scaler.update()
         else:
             pred, loss = self.forward_pass(data)
+            # Optional early abort on NaN/Inf activations reported by model
+            self._pending_debug_stats = None
+            if hasattr(self.model, "get_and_reset_debug_stats"):
+                try:
+                    self._pending_debug_stats = self.model.get_and_reset_debug_stats()
+                except Exception:
+                    self._pending_debug_stats = None
+            if getattr(self.args, "abort_on_nan_activations", False) and self._pending_debug_stats:
+                if any(d.get("L0.inter.nan_or_inf", False) or d.get("L0.mix.nan_or_inf", False) or any(v for k,v in d.items() if k.endswith("nan_or_inf")) for d in self._pending_debug_stats):
+                    # Skip backward/step if activations exploded
+                    return pred, loss
             if self.args.discard_nan_gradients and self._gradient_isnan():
                 return pred, loss
             self._limit_gradients()
@@ -255,6 +266,30 @@ class Trainer:
             self.optimizer.step()
 
         self.lr_scheduler.step()
+
+        # Optional per-layer diagnostics to wandb
+        if getattr(self.args, "debug_layer_stats_every", None) is not None:
+            if self.step_count % int(self.args.debug_layer_stats_every) == 0:
+                debug_stats = getattr(self, "_pending_debug_stats", None)
+                if debug_stats:
+                    # Flatten with per-layer keys
+                    flat = {}
+                    for i, d in enumerate(debug_stats):
+                        for k, v in d.items():
+                            flat[f"debug/{k}"] = v
+                    try:
+                        wandb.log(flat, step=self.step_count)
+                    except Exception:
+                        pass
+                    try:
+                        import os, json
+                        out_path = os.path.join(self.save_dir_path, "layer_stats.jsonl")
+                        with open(out_path, "a") as f:
+                            record = {"step": int(self.step_count), **flat}
+                            f.write(json.dumps(record) + "\n")
+                    except Exception:
+                        pass
+                self._pending_debug_stats = None
 
         if (
             self.args.sync_cuda_cores
@@ -987,4 +1022,3 @@ class Trainer:
         print(
             f"Training for {self.step_count} steps took {end_time - start_time:.2f} seconds"
         )
-

@@ -104,6 +104,32 @@ class PaiNNModelConfig(BaseConfig):
     include_velocity_norm: bool = Field(
         True, description="Append |v| to scalar features"
     )
+    # Stability / Ablation toggles (optional)
+    residual_scale_interaction: float = Field(1.0, description="Scale for interaction residual updates")
+    residual_scale_mixing: float = Field(1.0, description="Scale for mixing residual updates")
+    tanh_message_scale: Optional[float] = Field(
+        None, description="If set, apply tanh(x/s)*s to interaction messages"
+    )
+    tanh_mixing_scale: Optional[float] = Field(
+        None, description="If set, apply tanh to mixing deltas with this scale"
+    )
+    clip_scalar_msg_value: Optional[float] = Field(
+        None, description="Clamp aggregated scalar message to [-c, c]"
+    )
+    clip_vector_msg_norm: Optional[float] = Field(
+        None, description="Clamp aggregated vector message per-feature L2 norm"
+    )
+    clip_q_value: Optional[float] = Field(
+        None, description="Clamp scalar state q to [-c, c] after mixing"
+    )
+    clip_mu_norm: Optional[float] = Field(
+        None, description="Clamp vector state mu per-feature L2 norm after mixing"
+    )
+    filter_gain: float = Field(1.0, description="Global gain on filter_network outputs")
+    enable_debug_stats: bool = Field(
+        False,
+        description="Collect per-layer stats to locate explosions (logged by trainer)",
+    )
 
 
 class EgnnMcModelConfig(BaseConfig):
@@ -296,6 +322,15 @@ class BaseTrainerConfig(BaseConfig):
         description="If configured, validation set will be used",
     )
     seed: Optional[int] = Field(None, description="Seed for whole operation.")
+    # Diagnostics / stability logging
+    debug_layer_stats_every: Optional[int] = Field(
+        None,
+        description="If set, log per-layer activation/message stats every N steps",
+    )
+    abort_on_nan_activations: bool = Field(
+        False,
+        description="Abort optimizer step if model reports NaN/Inf activations",
+    )
     clip_gradients_norm: Optional[float] = Field(
         None,
         description="During training, this is the max allowed value of norm of all gradients",

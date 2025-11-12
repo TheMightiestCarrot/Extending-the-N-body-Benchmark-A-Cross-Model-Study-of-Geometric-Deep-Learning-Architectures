@@ -99,6 +99,16 @@ def create_model(args, train_dataloader=None):
             targets=targets,
             use_velocity_input=getattr(args, "use_velocity_input", True),
             include_velocity_norm=getattr(args, "include_velocity_norm", True),
+            residual_scale_interaction=getattr(args, "residual_scale_interaction", 1.0),
+            residual_scale_mixing=getattr(args, "residual_scale_mixing", 1.0),
+            tanh_message_scale=getattr(args, "tanh_message_scale", None),
+            tanh_mixing_scale=getattr(args, "tanh_mixing_scale", None),
+            clip_scalar_msg_value=getattr(args, "clip_scalar_msg_value", None),
+            clip_vector_msg_norm=getattr(args, "clip_vector_msg_norm", None),
+            clip_q_value=getattr(args, "clip_q_value", None),
+            clip_mu_norm=getattr(args, "clip_mu_norm", None),
+            filter_gain=getattr(args, "filter_gain", 1.0),
+            enable_debug_stats=getattr(args, "enable_debug_stats", False),
         )
     elif args.model_type == "egnn_mc":
         targets = tuple(

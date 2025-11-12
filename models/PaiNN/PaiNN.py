@@ -83,9 +83,27 @@ class EquivariantLinear(nn.Module):
 class PaiNNInteraction(nn.Module):
     """Implements the message passing block of PaiNN."""
 
-    def __init__(self, hidden_channels: int, num_rbf: int):
+    def __init__(
+        self,
+        hidden_channels: int,
+        num_rbf: int,
+        *,
+        residual_scale: float = 1.0,
+        tanh_message_scale: float | None = None,
+        clip_scalar_msg_value: float | None = None,
+        clip_vector_msg_norm: float | None = None,
+        filter_gain: float = 1.0,
+        enable_debug_stats: bool = False,
+    ):
         super().__init__()
         self.hidden_channels = hidden_channels
+        self.residual_scale = float(residual_scale)
+        self.tanh_message_scale = tanh_message_scale
+        self.clip_scalar_msg_value = clip_scalar_msg_value
+        self.clip_vector_msg_norm = clip_vector_msg_norm
+        self.filter_gain = float(filter_gain)
+        self.enable_debug_stats = enable_debug_stats
+        self._last_debug: dict[str, float] | None = None
         self.inter_mlp = nn.Sequential(
             nn.Linear(hidden_channels, hidden_channels * 3),
             nn.SiLU(),
@@ -111,18 +129,27 @@ class PaiNNInteraction(nn.Module):
         target = edge_index[0]
 
         filters = self.filter_network(rbf) * cutoff_values.unsqueeze(-1)
+        if self.filter_gain != 1.0:
+            filters = filters * self.filter_gain
         filter_q, filter_r, filter_mu = filters.chunk(3, dim=-1)
 
         x = self.inter_mlp(q)
         x_q, x_r, x_mu = x.chunk(3, dim=-1)
 
         x_q_src = x_q[source] * filter_q
+        if self.tanh_message_scale is not None:
+            s = self.tanh_message_scale
+            x_q_src = torch.tanh(x_q_src / s) * s
         scalar_msg = scatter(
             x_q_src, target, dim=0, dim_size=num_nodes, reduce="sum"
         )
 
         x_r_src = x_r[source] * filter_r
         x_mu_src = x_mu[source] * filter_mu
+        if self.tanh_message_scale is not None:
+            s = self.tanh_message_scale
+            x_r_src = torch.tanh(x_r_src / s) * s
+            x_mu_src = torch.tanh(x_mu_src / s) * s
         mu_src = mu[source]
 
         vec_new = unit_vectors.unsqueeze(-1) * x_r_src.unsqueeze(-2)
@@ -141,15 +168,59 @@ class PaiNNInteraction(nn.Module):
         scalar_msg = scalar_msg / deg.view(-1, 1)
         vector_msg = vector_msg / deg.view(-1, 1, 1)
 
+        # Optional clipping of aggregated messages
+        if self.clip_scalar_msg_value is not None:
+            c = self.clip_scalar_msg_value
+            scalar_msg = torch.clamp(scalar_msg, min=-c, max=c)
+        if self.clip_vector_msg_norm is not None:
+            c = self.clip_vector_msg_norm
+            vnorm = torch.sqrt((vector_msg**2).sum(dim=1) + 1e-12)
+            scale = torch.clamp(c / (vnorm + 1e-12), max=1.0)
+            vector_msg = vector_msg * scale.unsqueeze(1)
+
+        # Residual scaling to damp updates
+        scalar_msg = self.residual_scale * scalar_msg
+        vector_msg = self.residual_scale * vector_msg
+
         q = q + scalar_msg
         mu = mu + vector_msg
+
+        if self.enable_debug_stats:
+            # Collect lightweight stats to locate explosions
+            with torch.no_grad():
+                stats = {}
+                stats["scalar_msg_max"] = float(torch.max(torch.abs(scalar_msg)).detach().cpu())
+                vnorm = torch.sqrt((vector_msg**2).sum(dim=1))  # (N,F)
+                stats["vector_msg_norm_max"] = float(torch.max(vnorm).detach().cpu())
+                stats["deg_max"] = int(deg.max().item())
+                stats["x_q_src_max"] = float(torch.max(torch.abs(x_q_src)).detach().cpu())
+                stats["x_r_src_max"] = float(torch.max(torch.abs(x_r_src)).detach().cpu())
+                stats["x_mu_src_max"] = float(torch.max(torch.abs(x_mu_src)).detach().cpu())
+                # NaN/Inf flags
+                any_nan = (
+                    torch.isnan(q).any()
+                    or torch.isnan(mu).any()
+                    or torch.isinf(q).any()
+                    or torch.isinf(mu).any()
+                )
+                stats["nan_or_inf"] = bool(any_nan)
+                self._last_debug = stats
         return q, mu
 
 
 class PaiNNMixing(nn.Module):
     """Implements the equivariant mixing block."""
 
-    def __init__(self, hidden_channels: int):
+    def __init__(
+        self,
+        hidden_channels: int,
+        *,
+        residual_scale: float = 1.0,
+        tanh_mixing_scale: float | None = None,
+        clip_mu_norm: float | None = None,
+        clip_q_value: float | None = None,
+        enable_debug_stats: bool = False,
+    ):
         super().__init__()
         self.vec_linear = EquivariantLinear(hidden_channels, hidden_channels * 2)
         self.scalar_mlp = nn.Sequential(
@@ -157,6 +228,12 @@ class PaiNNMixing(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_channels * 3, hidden_channels * 3),
         )
+        self.residual_scale = float(residual_scale)
+        self.tanh_mixing_scale = tanh_mixing_scale
+        self.clip_mu_norm = clip_mu_norm
+        self.clip_q_value = clip_q_value
+        self.enable_debug_stats = enable_debug_stats
+        self._last_debug: dict[str, float] | None = None
 
     def forward(self, q: torch.Tensor, mu: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         mu_cat = self.vec_linear(mu)
@@ -166,20 +243,68 @@ class PaiNNMixing(nn.Module):
         scalar_input = torch.cat([q, mu_v_norm], dim=-1)
         delta = self.scalar_mlp(scalar_input)
         dq, dmu_scale, dqmu = delta.chunk(3, dim=-1)
+        if self.tanh_mixing_scale is not None:
+            s = self.tanh_mixing_scale
+            dq = torch.tanh(dq / s) * s
+            dmu_scale = torch.tanh(dmu_scale / s) * s
+            dqmu = torch.tanh(dqmu / s) * s
 
         inner = (mu_v * mu_w).sum(dim=1)
-        q = q + dq + dqmu * inner
-        mu = mu + mu_w * dmu_scale.unsqueeze(1)
+        dq_total = dq + dqmu * inner
+        dmu_total = mu_w * dmu_scale.unsqueeze(1)
+
+        # Residual scaling
+        q = q + self.residual_scale * dq_total
+        mu = mu + self.residual_scale * dmu_total
+
+        # Optional clipping of states
+        if self.clip_q_value is not None:
+            c = self.clip_q_value
+            q = torch.clamp(q, min=-c, max=c)
+        if self.clip_mu_norm is not None:
+            c = self.clip_mu_norm
+            mu_norm = torch.sqrt((mu**2).sum(dim=1) + 1e-12)
+            scale = torch.clamp(c / (mu_norm + 1e-12), max=1.0)
+            mu = mu * scale.unsqueeze(1)
+
+        if self.enable_debug_stats:
+            with torch.no_grad():
+                stats = {}
+                stats["mu_v_norm_max"] = float(torch.max(mu_v_norm).detach().cpu())
+                stats["dq_max"] = float(torch.max(torch.abs(dq)).detach().cpu())
+                stats["dmu_scale_max"] = float(torch.max(torch.abs(dmu_scale)).detach().cpu())
+                stats["dqmu_max"] = float(torch.max(torch.abs(dqmu)).detach().cpu())
+                stats["q_abs_max"] = float(torch.max(torch.abs(q)).detach().cpu())
+                mu_norm_now = torch.sqrt((mu**2).sum(dim=1))
+                stats["mu_norm_max"] = float(torch.max(mu_norm_now).detach().cpu())
+                any_nan = (
+                    torch.isnan(q).any()
+                    or torch.isnan(mu).any()
+                    or torch.isinf(q).any()
+                    or torch.isinf(mu).any()
+                )
+                stats["nan_or_inf"] = bool(any_nan)
+                self._last_debug = stats
         return q, mu
 
 
 class PaiNNBlock(nn.Module):
     """Full interaction + mixing block."""
 
-    def __init__(self, hidden_channels: int, num_rbf: int):
+    def __init__(
+        self,
+        hidden_channels: int,
+        num_rbf: int,
+        *,
+        inter_kwargs: dict | None = None,
+        mix_kwargs: dict | None = None,
+    ):
         super().__init__()
-        self.interaction = PaiNNInteraction(hidden_channels, num_rbf)
-        self.mixing = PaiNNMixing(hidden_channels)
+        inter_kwargs = inter_kwargs or {}
+        mix_kwargs = mix_kwargs or {}
+        self.interaction = PaiNNInteraction(hidden_channels, num_rbf, **inter_kwargs)
+        self.mixing = PaiNNMixing(hidden_channels, **mix_kwargs)
+        self._last_debug: dict[str, float] | None = None
 
     def forward(
         self,
@@ -192,6 +317,15 @@ class PaiNNBlock(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         q, mu = self.interaction(q, mu, edge_index, rbf, unit_vectors, cutoff_values)
         q, mu = self.mixing(q, mu)
+        # Merge child debug stats
+        if self.interaction.enable_debug_stats or self.mixing.enable_debug_stats:
+            self._last_debug = {}
+            if self.interaction._last_debug:
+                for k, v in self.interaction._last_debug.items():
+                    self._last_debug[f"inter.{k}"] = v
+            if self.mixing._last_debug:
+                for k, v in self.mixing._last_debug.items():
+                    self._last_debug[f"mix.{k}"] = v
         return q, mu
 
 
@@ -228,6 +362,17 @@ class PaiNN(nn.Module):
         targets: Sequence[str] | None = None,
         use_velocity_input: bool = True,
         include_velocity_norm: bool = True,
+        # Stability / Ablation toggles
+        residual_scale_interaction: float = 1.0,
+        residual_scale_mixing: float = 1.0,
+        tanh_message_scale: float | None = None,
+        tanh_mixing_scale: float | None = None,
+        clip_scalar_msg_value: float | None = None,
+        clip_vector_msg_norm: float | None = None,
+        clip_q_value: float | None = None,
+        clip_mu_norm: float | None = None,
+        filter_gain: float = 1.0,
+        enable_debug_stats: bool = False,
     ):
         super().__init__()
         self.hidden_features = hidden_features
@@ -237,6 +382,8 @@ class PaiNN(nn.Module):
         self.targets = tuple(targets or ("pos_dt", "vel"))
         self.use_velocity_input = use_velocity_input
         self.include_velocity_norm = include_velocity_norm
+        self.enable_debug_stats = enable_debug_stats
+        self._debug_stats_current_pass: list[dict[str, float]] = []
 
         scalar_inputs = 1  # mass
         if include_velocity_norm:
@@ -259,8 +406,24 @@ class PaiNN(nn.Module):
 
         self.rbf = GaussianRBF(num_rbf, cutoff)
         self.cutoff_fn = CosineCutoff(cutoff)
+        inter_kwargs = dict(
+            residual_scale=residual_scale_interaction,
+            tanh_message_scale=tanh_message_scale,
+            clip_scalar_msg_value=clip_scalar_msg_value,
+            clip_vector_msg_norm=clip_vector_msg_norm,
+            filter_gain=filter_gain,
+            enable_debug_stats=enable_debug_stats,
+        )
+        mix_kwargs = dict(
+            residual_scale=residual_scale_mixing,
+            tanh_mixing_scale=tanh_mixing_scale,
+            clip_mu_norm=clip_mu_norm,
+            clip_q_value=clip_q_value,
+            enable_debug_stats=enable_debug_stats,
+        )
         self.blocks = nn.ModuleList(
-            PaiNNBlock(hidden_features, num_rbf) for _ in range(num_layers)
+            PaiNNBlock(hidden_features, num_rbf, inter_kwargs=inter_kwargs, mix_kwargs=mix_kwargs)
+            for _ in range(num_layers)
         )
 
         # Heads (each output is a single 3D vector)
@@ -314,8 +477,12 @@ class PaiNN(nn.Module):
         rbf = self.rbf(distances)
         cutoff_values = self.cutoff_fn(distances)
 
-        for block in self.blocks:
+        self._debug_stats_current_pass = []
+        for li, block in enumerate(self.blocks):
             q, mu = block(q, mu, edge_index, rbf, unit_vectors, cutoff_values)
+            if self.enable_debug_stats and block._last_debug is not None:
+                # prefix with layer index
+                self._debug_stats_current_pass.append({f"L{li}.{k}": v for k, v in block._last_debug.items()})
 
         pos_delta = self.pos_head(q, mu).squeeze(-1)
         vel_delta = self.vel_head(q, mu).squeeze(-1)
@@ -331,6 +498,11 @@ class PaiNN(nn.Module):
                 raise NotImplementedError(f"Unsupported target '{target}' for PaiNN.")
 
         return torch.cat(outputs, dim=-1)
+
+    def get_and_reset_debug_stats(self) -> list[dict[str, float]]:
+        stats = self._debug_stats_current_pass
+        self._debug_stats_current_pass = []
+        return stats
 
     def get_model_size(self) -> int:
         return self.hidden_features
