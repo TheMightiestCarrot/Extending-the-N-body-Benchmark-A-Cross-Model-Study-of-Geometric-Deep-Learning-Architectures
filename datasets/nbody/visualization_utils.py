@@ -872,6 +872,11 @@ def plot_energies_until_explosion(
     # Show up to the last safe index (exclude the first exploding step)
     xmax = int(max(0, explosion_times[0] - 1))
 
+    # Clip predicted series beyond xmax so autoscaling ignores exploded values
+    energies_clipped = np.array(energies_array, copy=True)
+    if xmax + 1 < energies_clipped.shape[2]:
+        energies_clipped[pred_idx, :, xmax + 1 :, :] = np.nan
+
     return plot_energies_of_all_sims_multiplot(
         dataset,
         loc,
@@ -881,7 +886,7 @@ def plot_energies_until_explosion(
         title_suffixes=title_suffixes,
         separate_y_axes=True,
         xmax=xmax,
-        energies_array=energies_array,
+        energies_array=energies_clipped,
     )
 
 
