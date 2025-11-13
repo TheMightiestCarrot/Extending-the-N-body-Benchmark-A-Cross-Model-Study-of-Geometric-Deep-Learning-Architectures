@@ -231,23 +231,17 @@ class Trainer:
                 }
 
     def train_one_step(self, data):
-
+        # Zero grads up-front for this step
         self.optimizer.zero_grad()
         data = self.dataloader.preprocess_batch(data[0], self.device)
 
+        took_step = False
+
         if self.args.precision_mode == PrecisionMode.AUTOCAST:
-            with autocast():  # Enables autocasting for mixed precision
+            # Forward under autocast
+            with autocast():
                 pred, loss = self.forward_pass(data)
-            if self.args.discard_nan_gradients and self._gradient_isnan():
-                return pred, loss
-            self._limit_gradients()
 
-            self.scaler.scale(loss).backward()
-
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            pred, loss = self.forward_pass(data)
             # Optional early abort on NaN/Inf activations reported by model
             self._pending_debug_stats = None
             if hasattr(self.model, "get_and_reset_debug_stats"):
@@ -256,16 +250,80 @@ class Trainer:
                 except Exception:
                     self._pending_debug_stats = None
             if getattr(self.args, "abort_on_nan_activations", False) and self._pending_debug_stats:
-                if any(d.get("L0.inter.nan_or_inf", False) or d.get("L0.mix.nan_or_inf", False) or any(v for k,v in d.items() if k.endswith("nan_or_inf")) for d in self._pending_debug_stats):
+                if any(
+                    d.get("L0.inter.nan_or_inf", False)
+                    or d.get("L0.mix.nan_or_inf", False)
+                    or any(v for k, v in d.items() if k.endswith("nan_or_inf"))
+                    for d in self._pending_debug_stats
+                ):
                     # Skip backward/step if activations exploded
                     return pred, loss
-            if self.args.discard_nan_gradients and self._gradient_isnan():
-                return pred, loss
-            self._limit_gradients()
-            loss.backward()
-            self.optimizer.step()
 
-        self.lr_scheduler.step()
+            # Backward with GradScaler
+            self.scaler.scale(loss).backward()
+
+            # Unscale before gradient clipping and checks
+            self.scaler.unscale_(self.optimizer)
+
+            # Optionally drop step on NaN/Inf gradients
+            if self.args.discard_nan_gradients and self._gradient_isnan():
+                # Do not step or advance scheduler; clear grads and update scaler state
+                try:
+                    self.optimizer.zero_grad(set_to_none=True)
+                except TypeError:
+                    self.optimizer.zero_grad()
+                # Still update scaler to adjust its scale heuristics
+                self.scaler.update()
+                return pred, loss
+
+            # Clip after unscale
+            self._limit_gradients()
+
+            # Optimizer step via scaler
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            took_step = True
+
+        else:
+            # Standard precision forward
+            pred, loss = self.forward_pass(data)
+
+            # Optional early abort on NaN/Inf activations reported by model
+            self._pending_debug_stats = None
+            if hasattr(self.model, "get_and_reset_debug_stats"):
+                try:
+                    self._pending_debug_stats = self.model.get_and_reset_debug_stats()
+                except Exception:
+                    self._pending_debug_stats = None
+            if getattr(self.args, "abort_on_nan_activations", False) and self._pending_debug_stats:
+                if any(
+                    d.get("L0.inter.nan_or_inf", False)
+                    or d.get("L0.mix.nan_or_inf", False)
+                    or any(v for k, v in d.items() if k.endswith("nan_or_inf"))
+                    for d in self._pending_debug_stats
+                ):
+                    # Skip backward/step if activations exploded
+                    return pred, loss
+
+            # Backward to populate gradients
+            loss.backward()
+
+            # Optionally drop step on NaN/Inf gradients
+            if self.args.discard_nan_gradients and self._gradient_isnan():
+                try:
+                    self.optimizer.zero_grad(set_to_none=True)
+                except TypeError:
+                    self.optimizer.zero_grad()
+                return pred, loss
+
+            # Clip and step optimizer
+            self._limit_gradients()
+            self.optimizer.step()
+            took_step = True
+
+        # Only advance LR schedule if we actually took an optimizer step
+        if took_step:
+            self.lr_scheduler.step()
 
         # Optional per-layer diagnostics to wandb
         if getattr(self.args, "debug_layer_stats_every", None) is not None:

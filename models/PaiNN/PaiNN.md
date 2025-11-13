@@ -199,3 +199,101 @@ q_i &\leftarrow q_i + \Delta q_i^{\text{(m)}} + \delta\mathbf{q} + \delta\mathbf
 $$
 
 That’s the PaiNN core: scalable equivariant message passing (via $\hat{\mathbf{r}}_{ij}$ and vector transport), plus tight scalar–vector coupling for expressive, symmetry-respecting predictions of both scalar and tensorial molecular properties.
+
+---
+
+## Stabilized PaiNN for N-body (current working variant) and ablation findings
+
+This section documents the variant we now train stably on the N-body dataset and summarizes why the original setting exploded and how we fixed it. All modifications preserve permutation/translation invariance and $\mathrm{SO}(3)$ equivariance (vector operations are isotropic over the 3D axis).
+
+### Where the explosions came from
+
+In deeper layers (L4–L5), the mixing residual
+$$
+q_i \leftarrow q_i + \delta \mathbf{q} + \underbrace{\delta \mathbf{q\mu} \odot \langle \boldsymbol{\mu}_{V,i}, \boldsymbol{\mu}_{W,i} \rangle}_{\text{quadratic in }\|\boldsymbol{\mu}\|}
+\quad \text{and} \quad
+\boldsymbol{\mu}_i \leftarrow \boldsymbol{\mu}_i + \underbrace{\big(\delta \boldsymbol{\mu}\big) \odot \boldsymbol{\mu}_{W,i}}_{\text{amplifies }\|\boldsymbol{\mu}\|}
+$$
+created a positive feedback loop: large $\|\boldsymbol{\mu}\|$ increased $\delta \mathbf{q\mu}$ (via the MLP), which in turn increased $q$, leading to larger interaction messages and even larger $\|\boldsymbol{\mu}\|$ in subsequent layers.
+
+### Stabilized interaction (message passing)
+
+We keep the standard filtered messages but add degree-normalized aggregation and bounded pre/post-aggregation magnitudes.
+
+1) Filters with global gain $g$ and cutoff
+$$
+\mathbf{W}_{ij} = g\,\mathrm{MLP}_{\!f}\big(\boldsymbol{\phi}(r_{ij})\big)\, f_{\text{cut}}(r_{ij}),\qquad g>0.
+$$
+
+2) Per-edge message gating with tanh saturation (scale $s_{\text{msg}}$)
+$$
+\begin{aligned}
+\tilde{\mathbf{x}}_{ij}^{(q)} &= \operatorname{sat}_{s_{\text{msg}}}\!\left(\mathbf{x}_j^{(q)} \odot \mathbf{W}_{ij}^{(q)}\right),\\
+\tilde{\mathbf{x}}_{ij}^{(R)} &= \operatorname{sat}_{s_{\text{msg}}}\!\left(\mathbf{x}_j^{(R)} \odot \mathbf{W}_{ij}^{(R)}\right),\\
+\tilde{\mathbf{x}}_{ij}^{(\mu)} &= \operatorname{sat}_{s_{\text{msg}}}\!\left(\mathbf{x}_j^{(\mu)} \odot \mathbf{W}_{ij}^{(\mu)}\right),
+\end{aligned}
+$$
+with $\operatorname{sat}_{s}(u)= s\,\tanh(u/s)$ applied elementwise.
+
+3) Messages and degree-normalized aggregation
+$$
+\begin{aligned}
+\Delta q_i^{\text{(m)}} &= \frac{1}{|\mathcal{N}(i)|}\sum_{j\in\mathcal{N}(i)} \tilde{\mathbf{x}}_{ij}^{(q)},\\
+\Delta \boldsymbol{\mu}_i^{\text{(m)}} &= \frac{1}{|\mathcal{N}(i)|}\sum_{j\in\mathcal{N}(i)}\Big(\tilde{\mathbf{x}}_{ij}^{(R)}\otimes \hat{\mathbf{r}}_{ij} + \tilde{\mathbf{x}}_{ij}^{(\mu)}\odot \boldsymbol{\mu}_j\Big).
+\end{aligned}
+$$
+
+4) Post-aggregation safety clamps (optional)
+$$
+\begin{aligned}
+\Delta q_i^{\text{(m)}} &\leftarrow \operatorname{clip}\big(\Delta q_i^{\text{(m)}},\;[-C_s,\,C_s]\big),\\
+\Delta \boldsymbol{\mu}_i^{\text{(m)}} &\leftarrow \operatorname{clip\_norm}\big(\Delta \boldsymbol{\mu}_i^{\text{(m)}},\; C_v\big),
+\end{aligned}
+$$
+where $\operatorname{clip\_norm}(\cdot,C)$ rescales each feature’s 3D vector to have L2-norm at most $C$ (isotropic, preserves equivariance).
+
+5) Residual update with scale $\alpha_{\text{inter}}$:
+$$
+q_i \leftarrow q_i + \alpha_{\text{inter}}\,\Delta q_i^{\text{(m)}},\qquad
+\boldsymbol{\mu}_i \leftarrow \boldsymbol{\mu}_i + \alpha_{\text{inter}}\,\Delta \boldsymbol{\mu}_i^{\text{(m)}}.
+$$
+
+### Stabilized mixing (equivariant gating)
+
+We keep the original structure but bound the scalars and apply a residual scale, followed by state clamps.
+
+1) Vector linear and norms as before:
+$$
+[\boldsymbol{\mu}_{V,i}\ \ \boldsymbol{\mu}_{W,i}] = \mathrm{Linear}(\boldsymbol{\mu}_i),\quad \mathbf{s}_{V,i}=\|\boldsymbol{\mu}_{V,i}\|_2.
+$$
+
+2) Bounded scalar outputs (scale $s_{\text{mix}}$)
+$$
+[\delta\mathbf{q},\,\delta\boldsymbol{\mu},\,\delta\mathbf{q\mu}] = \operatorname{sat}_{s_{\text{mix}}}\!\Big(\mathrm{MLP}_{\text{intra}}\big([q_i;\mathbf{s}_{V,i}]\big)\Big).
+$$
+
+3) Residual with scale $\alpha_{\text{mix}}$:
+$$
+\begin{aligned}
+q_i &\leftarrow q_i + \alpha_{\text{mix}}\,\Big(\delta\mathbf{q} + \delta\mathbf{q\mu} \odot \langle \boldsymbol{\mu}_{V,i},\boldsymbol{\mu}_{W,i} \rangle\Big),\\
+\boldsymbol{\mu}_i &\leftarrow \boldsymbol{\mu}_i + \alpha_{\text{mix}}\,\Big(\delta\boldsymbol{\mu} \odot \boldsymbol{\mu}_{W,i}\Big).
+\end{aligned}
+$$
+
+4) Post-mixing state clamps (optional)
+$$
+q_i \leftarrow \operatorname{clip}(q_i,[-C_q,\,C_q]),\qquad
+\boldsymbol{\mu}_i \leftarrow \operatorname{clip\_norm}(\boldsymbol{\mu}_i, C_{\mu}).
+$$
+
+### Hyperparameters used in the stable run (R2_full)
+
+$$
+\begin{aligned}
+&\text{Degree norm: mean (}1/|\mathcal{N}(i)|\text{)};\quad g=0.5;\quad s_{\text{msg}}=5;\quad s_{\text{mix}}=5;\\
+&\alpha_{\text{inter}}=0.5;\quad \alpha_{\text{mix}}=0.5;\\
+&C_v=10;\quad C_s=10;\quad C_{\mu}=20;\quad C_q=100.
+\end{aligned}
+$$
+
+These bounds kept per-layer statistics finite with no NaN/Inf events while preserving the desired symmetries.
