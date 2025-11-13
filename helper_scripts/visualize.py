@@ -9,6 +9,7 @@ from datasets.nbody.visualization_utils import (
     interactive_plotly_offline_plot_multi_trajectory,
     load_dataset_from_metadata_file,
     plot_energies_of_all_sims_multiplot,
+    plot_energies_until_explosion,
 )
 from utils.nbody_utils import get_dataset_metadata_path
 
@@ -50,11 +51,22 @@ def visualize_simulation_by_sim_index(args):
         combined_locations = np.expand_dims(combined_locations, axis=1)
         combined_velocities = np.expand_dims(combined_velocities, axis=1)
 
+        # Standard energy plot (now with separate y-axes per subplot)
         plot_energies_of_all_sims_multiplot(
             dataset,
             combined_locations,
             combined_velocities,
             save_dir=save_dir,
+            title_suffixes=["ground truth", "predicted"],
+        )
+
+        # Additional plot: show data only up to the first predicted explosion
+        plot_energies_until_explosion(
+            dataset,
+            combined_locations,
+            combined_velocities,
+            save_dir=save_dir,
+            filename="energies_pre_explosion.png",
             title_suffixes=["ground truth", "predicted"],
         )
     except Exception as e:
