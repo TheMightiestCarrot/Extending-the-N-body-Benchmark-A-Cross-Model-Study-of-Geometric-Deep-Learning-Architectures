@@ -125,7 +125,7 @@ class _EGNNMessageBlock(nn.Module):
         self, node_state: Tensor, edge_index: Tensor, edge_attr: Tensor
     ) -> Tensor:
         row, _ = edge_index
-        aggregated = _unsorted_segment_sum(edge_attr, row, num_segments=node_state.size(0))
+        aggregated = _unsorted_segment_mean(edge_attr, row, num_segments=node_state.size(0))
         node_input = torch.cat([node_state, aggregated], dim=-1)
         node_output = self.node_mlp(node_input)
         if self.recurrent:
