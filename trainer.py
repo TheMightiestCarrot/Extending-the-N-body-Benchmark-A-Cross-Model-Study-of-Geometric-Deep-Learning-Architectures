@@ -939,7 +939,7 @@ class Trainer:
         # optional cap on rollout length for speed-sensitive models (e.g., cgenn during HPO)
         max_steps = getattr(self.args, "self_feed_limit_steps", None)
 
-        _, combined_locations, _ = run_inference(
+        _, combined_locations, combined_velocities = run_inference(
             model_type=self.args.model_type,
             dataloader=self.dataloader,
             model_path=self.save_dir_path,
@@ -967,12 +967,11 @@ class Trainer:
 
             sim_loc = combined_locations[0]  # (batch, steps, n, d)
             sf_loc = combined_locations[1]
-            # velocities come from inference output; if unavailable, approximate by finite differences
-            try:
-                # helper_scripts.infer_self_feed.run_inference returns combined_velocities; fetch if possible
-                # but our signature captured only positions; so we fallback
-                raise RuntimeError
-            except Exception:
+            # Prefer velocities returned by inference; fall back to finite differences only if absent
+            if combined_velocities is not None:
+                sim_vel = combined_velocities[0]
+                sf_vel = combined_velocities[1]
+            else:
                 # finite difference (dt=1 in arbitrary units)
                 def finite_diff(x):
                     # x: (batch, steps, n, d) -> (batch, steps, n, d)

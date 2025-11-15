@@ -48,8 +48,8 @@ models:
     activation: silu
     coords_weight: 1.0
     recurrent: true
-    norm_diff: false
-    tanh: false
+    norm_diff: true
+    tanh: true
 
   equiformer_v2:
     class_path: models.equiformer_v2.architecture.equiformer_v2_nbody.EquiformerV2_nbody
