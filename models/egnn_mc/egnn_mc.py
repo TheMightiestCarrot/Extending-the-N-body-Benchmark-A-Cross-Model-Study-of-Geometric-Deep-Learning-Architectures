@@ -262,10 +262,13 @@ class EGNNMultiChannel(nn.Module):
             )
         self.layers = nn.ModuleList(layers)
 
-        head_input_dim = hidden_node_dim + 6  # pos_dt (3) + vel (3)
-        self.heads = nn.ModuleList(
-            [_VectorHead(head_input_dim, hidden_node_dim, act_factory) for _ in self.target_names]
-        )
+        head_input_dim = hidden_node_dim + 3  # hidden state + modeled displacement
+        self.predicts_pos = "pos_dt" in self.target_names
+        self.predicts_vel = "vel" in self.target_names
+        if self.predicts_pos:
+            self.pos_head = _VectorHead(head_input_dim, hidden_node_dim, act_factory)
+        if self.predicts_vel:
+            self.vel_head = _VectorHead(head_input_dim, hidden_node_dim, act_factory)
 
         self.to(self.device)
 
@@ -287,11 +290,21 @@ class EGNNMultiChannel(nn.Module):
             h, coord, vel_state = layer(h, edge_index, coord, vel_state, edge_attr=edge_attr)
 
         coord = coord.squeeze(-1) if coord.dim() == 3 else coord
-        vel_state = vel_state.squeeze(-1) if vel_state.dim() == 3 else vel_state
         pos_dt = coord - node_pos
+        head_input = torch.cat([h, pos_dt], dim=-1)
 
-        head_input = torch.cat([h, pos_dt, vel_state], dim=-1)
-        outputs = [head(head_input) for head in self.heads]
+        outputs: list[Tensor] = []
+        zero_pos = torch.zeros_like(pos_dt)
+        zero_vel = torch.zeros_like(node_vel)
+        for target in self.target_names:
+            if target == "pos_dt":
+                residual = self.pos_head(head_input) if self.predicts_pos else zero_pos
+                outputs.append(pos_dt + residual)
+            elif target == "vel":
+                vel_delta = self.vel_head(head_input) if self.predicts_vel else zero_vel
+                outputs.append(node_vel + vel_delta)
+            else:
+                raise NotImplementedError(f"Unsupported target '{target}' for EGNNMultiChannel.")
         return torch.cat(outputs, dim=-1)
 
     def get_serializable_attributes(self) -> dict[str, object]:
