@@ -9,13 +9,26 @@ The easiest and most convenient way to install the project is to use Docker.
 ### Building the Docker image
 
 ```bash
-docker build -t nbody-cuda .
+docker build \
+  --build-arg UID=$(id -u) \
+  --build-arg GID=$(id -g) \
+  -t nbody-cuda .
 ```
 
 ### Running the Docker container
 
 ```bash
-docker run --gpus all -it -v $(pwd):/n_body_approx nbody-cuda
+# Interactive shell (no need for --user)
+docker run --env-file .env --gpus all -it -v $(pwd):/n_body_approx nbody-cuda
+
+# Or run a command directly, e.g. training
+docker run --rm --env-file .env --gpus all -v $(pwd):/n_body_approx \
+  nbody-cuda \
+  python -m train --config config.yaml --trainer_type trainer_nbody \
+  --model_type segnn --dataloader_type segnn_nbody \
+  --trainer.learning_rate 1.0858181069399002 \
+  --model.num_layers 6 --model.hidden_features 192 --model.lmax_h 1 \
+  --trainer.steps_per_epoch 1000 --trainer.test_macros_every 10
 ```
 
 ## Training the Models
@@ -167,9 +180,10 @@ git clone git@github.com:Simona-Biosystems/n_body_approx.git && cd n_body_approx
 ### Building and running the container
 
 ```bash
-docker build -t nbody-cuda .
+# Build with host UID/GID to avoid permission issues
+docker build --build-arg UID=$(id -u) --build-arg GID=$(id -g) -t nbody-cuda .
 nvidia-smi # check gpu access
-docker run --gpus all -it -v $(pwd):/n_body_approx nbody-cuda
+docker run --env-file .env --gpus all -it -v $(pwd):/n_body_approx nbody-cuda
 ```
 
 ### Copying files from the instance

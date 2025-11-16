@@ -2,7 +2,13 @@ import importlib
 
 from e3nn.o3 import Irreps
 
-from models import PONITA_NBODY, SEGNN, GraphTransformerTorch
+from models import (
+    EGNNMultiChannel,
+    PONITA_NBODY,
+    SEGNN,
+    GraphTransformerTorch,
+    PaiNN,
+)
 from models.CGENN.nbody_cgenn import NBodyCGENN
 from models.equiformer_v2.architecture.equiformer_v2_nbody import (
     EquiformerV2_nbody,
@@ -80,6 +86,50 @@ def create_model(args, train_dataloader=None):
             num_layers=getattr(args, "num_layers", 4),
             num_heads=getattr(args, "graph_transformer_num_heads", 4),
             args=args,
+        )
+    elif args.model_type == "painn":
+        targets = tuple(
+            args.target.split("+")
+        ) if hasattr(args, "target") and isinstance(args.target, str) else ("pos_dt", "vel")
+        model = PaiNN(
+            hidden_features=getattr(args, "hidden_features", 128),
+            num_layers=getattr(args, "num_layers", 6),
+            num_rbf=getattr(args, "num_rbf", 64),
+            cutoff=getattr(args, "cutoff", 10.0),
+            targets=targets,
+            use_velocity_input=getattr(args, "use_velocity_input", True),
+            include_velocity_norm=getattr(args, "include_velocity_norm", True),
+            residual_scale_interaction=getattr(args, "residual_scale_interaction", 1.0),
+            residual_scale_mixing=getattr(args, "residual_scale_mixing", 1.0),
+            tanh_message_scale=getattr(args, "tanh_message_scale", None),
+            tanh_mixing_scale=getattr(args, "tanh_mixing_scale", None),
+            clip_scalar_msg_value=getattr(args, "clip_scalar_msg_value", None),
+            clip_vector_msg_norm=getattr(args, "clip_vector_msg_norm", None),
+            clip_q_value=getattr(args, "clip_q_value", None),
+            clip_mu_norm=getattr(args, "clip_mu_norm", None),
+            filter_gain=getattr(args, "filter_gain", 1.0),
+            enable_debug_stats=getattr(args, "enable_debug_stats", False),
+        )
+    elif args.model_type == "egnn_mc":
+        targets = tuple(
+            args.target.split("+")
+        ) if hasattr(args, "target") and isinstance(args.target, str) else ("pos_dt", "vel")
+        if not targets:
+            raise ValueError("EGNNMultiChannel requires at least one target name.")
+        model = EGNNMultiChannel(
+            node_input_dim=getattr(args, "node_input_dim", 2),
+            edge_attr_dim=getattr(args, "edge_attr_dim", 4),
+            hidden_node_dim=getattr(args, "hidden_node_dim", getattr(args, "hidden_features", 128)),
+            hidden_edge_dim=getattr(args, "hidden_edge_dim", getattr(args, "hidden_features", 128)),
+            hidden_coord_dim=getattr(args, "hidden_coord_dim", getattr(args, "hidden_features", 128)),
+            num_layers=getattr(args, "num_layers", 4),
+            target_names=targets,
+            activation=getattr(args, "activation", "silu"),
+            coords_weight=getattr(args, "coords_weight", 1.0),
+            recurrent=getattr(args, "recurrent", True),
+            norm_diff=getattr(args, "norm_diff", False),
+            tanh=getattr(args, "tanh", False),
+            device=get_device(args.gpu_id),
         )
     else:
         raise ValueError(f"Unknown model {args.model_type}")

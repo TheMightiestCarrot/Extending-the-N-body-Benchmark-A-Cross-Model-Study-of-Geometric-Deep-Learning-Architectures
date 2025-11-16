@@ -231,30 +231,123 @@ class Trainer:
                 }
 
     def train_one_step(self, data):
-
+        # Zero grads up-front for this step
         self.optimizer.zero_grad()
         data = self.dataloader.preprocess_batch(data[0], self.device)
 
-        if self.args.precision_mode == PrecisionMode.AUTOCAST:
-            with autocast():  # Enables autocasting for mixed precision
-                pred, loss = self.forward_pass(data)
-            if self.args.discard_nan_gradients and self._gradient_isnan():
-                return pred, loss
-            self._limit_gradients()
+        took_step = False
 
+        if self.args.precision_mode == PrecisionMode.AUTOCAST:
+            # Forward under autocast
+            with autocast():
+                pred, loss = self.forward_pass(data)
+
+            # Optional early abort on NaN/Inf activations reported by model
+            self._pending_debug_stats = None
+            if hasattr(self.model, "get_and_reset_debug_stats"):
+                try:
+                    self._pending_debug_stats = self.model.get_and_reset_debug_stats()
+                except Exception:
+                    self._pending_debug_stats = None
+            if getattr(self.args, "abort_on_nan_activations", False) and self._pending_debug_stats:
+                if any(
+                    d.get("L0.inter.nan_or_inf", False)
+                    or d.get("L0.mix.nan_or_inf", False)
+                    or any(v for k, v in d.items() if k.endswith("nan_or_inf"))
+                    for d in self._pending_debug_stats
+                ):
+                    # Skip backward/step if activations exploded
+                    return pred, loss
+
+            # Backward with GradScaler
             self.scaler.scale(loss).backward()
 
+            # Unscale before gradient clipping and checks
+            self.scaler.unscale_(self.optimizer)
+
+            # Optionally drop step on NaN/Inf gradients
+            if self.args.discard_nan_gradients and self._gradient_isnan():
+                # Do not step or advance scheduler; clear grads and update scaler state
+                try:
+                    self.optimizer.zero_grad(set_to_none=True)
+                except TypeError:
+                    self.optimizer.zero_grad()
+                # Still update scaler to adjust its scale heuristics
+                self.scaler.update()
+                return pred, loss
+
+            # Clip after unscale
+            self._limit_gradients()
+
+            # Optimizer step via scaler
             self.scaler.step(self.optimizer)
             self.scaler.update()
-        else:
-            pred, loss = self.forward_pass(data)
-            if self.args.discard_nan_gradients and self._gradient_isnan():
-                return pred, loss
-            self._limit_gradients()
-            loss.backward()
-            self.optimizer.step()
+            took_step = True
 
-        self.lr_scheduler.step()
+        else:
+            # Standard precision forward
+            pred, loss = self.forward_pass(data)
+
+            # Optional early abort on NaN/Inf activations reported by model
+            self._pending_debug_stats = None
+            if hasattr(self.model, "get_and_reset_debug_stats"):
+                try:
+                    self._pending_debug_stats = self.model.get_and_reset_debug_stats()
+                except Exception:
+                    self._pending_debug_stats = None
+            if getattr(self.args, "abort_on_nan_activations", False) and self._pending_debug_stats:
+                if any(
+                    d.get("L0.inter.nan_or_inf", False)
+                    or d.get("L0.mix.nan_or_inf", False)
+                    or any(v for k, v in d.items() if k.endswith("nan_or_inf"))
+                    for d in self._pending_debug_stats
+                ):
+                    # Skip backward/step if activations exploded
+                    return pred, loss
+
+            # Backward to populate gradients
+            loss.backward()
+
+            # Optionally drop step on NaN/Inf gradients
+            if self.args.discard_nan_gradients and self._gradient_isnan():
+                try:
+                    self.optimizer.zero_grad(set_to_none=True)
+                except TypeError:
+                    self.optimizer.zero_grad()
+                return pred, loss
+
+            # Clip and step optimizer
+            self._limit_gradients()
+            self.optimizer.step()
+            took_step = True
+
+        # Only advance LR schedule if we actually took an optimizer step
+        if took_step:
+            self.lr_scheduler.step()
+
+        # Optional per-layer diagnostics to wandb
+        if getattr(self.args, "debug_layer_stats_every", None) is not None:
+            if self.step_count % int(self.args.debug_layer_stats_every) == 0:
+                debug_stats = getattr(self, "_pending_debug_stats", None)
+                if debug_stats:
+                    # Flatten with per-layer keys
+                    flat = {}
+                    for i, d in enumerate(debug_stats):
+                        for k, v in d.items():
+                            flat[f"debug/{k}"] = v
+                    try:
+                        wandb.log(flat, step=self.step_count)
+                    except Exception:
+                        pass
+                    try:
+                        import os, json
+                        out_path = os.path.join(self.save_dir_path, "layer_stats.jsonl")
+                        with open(out_path, "a") as f:
+                            record = {"step": int(self.step_count), **flat}
+                            f.write(json.dumps(record) + "\n")
+                    except Exception:
+                        pass
+                self._pending_debug_stats = None
 
         if (
             self.args.sync_cuda_cores
@@ -846,7 +939,7 @@ class Trainer:
         # optional cap on rollout length for speed-sensitive models (e.g., cgenn during HPO)
         max_steps = getattr(self.args, "self_feed_limit_steps", None)
 
-        _, combined_locations, _ = run_inference(
+        _, combined_locations, combined_velocities = run_inference(
             model_type=self.args.model_type,
             dataloader=self.dataloader,
             model_path=self.save_dir_path,
@@ -874,12 +967,11 @@ class Trainer:
 
             sim_loc = combined_locations[0]  # (batch, steps, n, d)
             sf_loc = combined_locations[1]
-            # velocities come from inference output; if unavailable, approximate by finite differences
-            try:
-                # helper_scripts.infer_self_feed.run_inference returns combined_velocities; fetch if possible
-                # but our signature captured only positions; so we fallback
-                raise RuntimeError
-            except Exception:
+            # Prefer velocities returned by inference; fall back to finite differences only if absent
+            if combined_velocities is not None:
+                sim_vel = combined_velocities[0]
+                sf_vel = combined_velocities[1]
+            else:
                 # finite difference (dt=1 in arbitrary units)
                 def finite_diff(x):
                     # x: (batch, steps, n, d) -> (batch, steps, n, d)
@@ -987,4 +1079,3 @@ class Trainer:
         print(
             f"Training for {self.step_count} steps took {end_time - start_time:.2f} seconds"
         )
-

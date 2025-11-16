@@ -682,23 +682,49 @@ def plot_differences_distribution_multiplot(
 
 
 def plot_energies_of_all_sims_multiplot(
-    dataset, loc, vel, save_dir=None, filename="energies.png", title_suffixes=None
+    dataset,
+    loc,
+    vel,
+    save_dir=None,
+    filename="energies.png",
+    title_suffixes=None,
+    *,
+    separate_y_axes: bool = True,
+    xmax: int | None = None,
+    energies_array: np.ndarray | None = None,
 ):
+    """Plot energies for all sims and batches.
+
+    Parameters
+    - dataset, loc, vel: inputs used to compute energies if `energies_array` not provided
+    - save_dir, filename, title_suffixes: plotting metadata
+    - separate_y_axes: when True, subplots do not share their y-axis. This prevents
+      an exploding series in one subplot from squashing the scale in others.
+    - xmax: if provided, restrict the x-axis of all subplots to [0, xmax]
+    - energies_array: optional precomputed array of shape
+      (num_batches, num_simulations, num_steps, 3)
+    """
     num_batches = loc.shape[0]
     if title_suffixes is None:
         title_suffixes = ["" for _ in range(num_batches)]
     num_simulations = loc.shape[1]
 
-    energies_array = []
-    # TODO: gain from parallelizing this is minimal, as we are already parallelizing
-    # over trajectories in get_energies_async
-    for batch in range(num_batches):
-        energies = dataset.get_energies_async(loc[batch, ...], vel[batch, ...])
-        energies_array.append(energies)
-    energies_array = np.stack(energies_array, axis=0)
+    # Allow caller to supply precomputed energies to avoid recomputation
+    if energies_array is None:
+        energies_list = []
+        # TODO: gain from parallelizing this is minimal, as we are already parallelizing
+        # over trajectories in get_energies_async
+        for batch in range(num_batches):
+            energies = dataset.get_energies_async(loc[batch, ...], vel[batch, ...])
+            energies_list.append(energies)
+        energies_array = np.stack(energies_list, axis=0)
 
     fig, axs = plt.subplots(
-        num_batches, 1, figsize=(14, 8 * num_batches), sharex=True, sharey=True
+        num_batches,
+        1,
+        figsize=(14, 8 * num_batches),
+        sharex=True,
+        sharey=not separate_y_axes,
     )
 
     colors = {
@@ -758,6 +784,8 @@ def plot_energies_of_all_sims_multiplot(
         }
 
         axs[batch].set_title(f"Energy {title_suffixes[batch]}".title())
+        if xmax is not None:
+            axs[batch].set_xlim(0, int(xmax))
         axs[batch].legend()
 
     # Set common labels and title
@@ -771,6 +799,95 @@ def plot_energies_of_all_sims_multiplot(
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(f"{save_dir}/{filename}")
     return energies_array
+
+
+def plot_energies_until_explosion(
+    dataset,
+    loc,
+    vel,
+    save_dir=None,
+    filename="energies_pre_explosion.png",
+    title_suffixes=None,
+    threshold_multiplier: float = 10.0,
+):
+    """Create an energy plot clipped to just before predicted energies explode.
+
+    Explosion is defined as any predicted energy magnitude exceeding
+    `threshold_multiplier` times the maximum magnitude observed in the
+    ground-truth energies (across all sims and energy types).
+
+    The function saves a second image identical to the standard energy plot
+    but with the x-axis limited to the last step prior to the first explosion.
+    """
+    num_batches = loc.shape[0]
+    if title_suffixes is None:
+        title_suffixes = ["" for _ in range(num_batches)]
+
+    # Compute energies once
+    energies_list = []
+    for batch in range(num_batches):
+        energies = dataset.get_energies_async(loc[batch, ...], vel[batch, ...])
+        energies_list.append(energies)
+    energies_array = np.stack(energies_list, axis=0)  # (B, S, T, 3)
+
+    # Heuristically pick ground-truth and predicted indices from titles
+    gt_idx = 0
+    pred_idx = 1 if num_batches > 1 else 0
+    for i, t in enumerate(title_suffixes):
+        tl = str(t).lower()
+        if "ground" in tl or "truth" in tl:
+            gt_idx = i
+        if "pred" in tl:
+            pred_idx = i
+    if pred_idx == gt_idx and num_batches >= 2:
+        pred_idx = 1 - gt_idx
+
+    # Ground-truth reference scale
+    gt_block = np.asarray(energies_array[gt_idx])  # (S, T, 3)
+    # Protect against NaNs and all-zero edge cases
+    gt_abs_max = np.nanmax(np.abs(np.nan_to_num(gt_block, nan=0.0)))
+    # Avoid a zero threshold which would immediately trigger
+    eps = np.finfo(np.float64).tiny
+    threshold = max(gt_abs_max * float(threshold_multiplier), eps)
+
+    # Find earliest explosion time in predicted batch across sims and energy types
+    pred_block = np.asarray(energies_array[pred_idx])  # (S, T, 3)
+    pred_abs = np.abs(np.nan_to_num(pred_block, nan=0.0))
+    # max over sims and energy types -> per-time scalar
+    per_t_max = pred_abs.max(axis=(0, 2))  # shape (T,)
+    explosion_times = np.where(per_t_max > threshold)[0]
+    if explosion_times.size == 0:
+        # No explosion detected; fall back to full plot but still separate y-axes
+        return plot_energies_of_all_sims_multiplot(
+            dataset,
+            loc,
+            vel,
+            save_dir=save_dir,
+            filename=filename,
+            title_suffixes=title_suffixes,
+            separate_y_axes=True,
+            energies_array=energies_array,
+        )
+
+    # Show up to the last safe index (exclude the first exploding step)
+    xmax = int(max(0, explosion_times[0] - 1))
+
+    # Clip predicted series beyond xmax so autoscaling ignores exploded values
+    energies_clipped = np.array(energies_array, copy=True)
+    if xmax + 1 < energies_clipped.shape[2]:
+        energies_clipped[pred_idx, :, xmax + 1 :, :] = np.nan
+
+    return plot_energies_of_all_sims_multiplot(
+        dataset,
+        loc,
+        vel,
+        save_dir=save_dir,
+        filename=filename,
+        title_suffixes=title_suffixes,
+        separate_y_axes=True,
+        xmax=xmax,
+        energies_array=energies_clipped,
+    )
 
 
 def plot_energy_distributions_across_all_sims_multiplot(

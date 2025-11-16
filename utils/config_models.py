@@ -90,6 +90,63 @@ class GraphTransformerModelConfig(BaseConfig):
     num_layers: int = Field(4)
     graph_transformer_num_heads: int = Field(4)
 
+
+class PaiNNModelConfig(BaseConfig):
+    name: Literal["painn"] = "painn"
+    class_path: str = Field("models.PaiNN.PaiNN.PaiNN")
+    hidden_features: int = Field(128, description="Hidden latent channels")
+    num_layers: int = Field(6, description="Number of PaiNN interaction blocks")
+    num_rbf: int = Field(64, description="Number of radial basis functions")
+    cutoff: float = Field(10.0, description="Distance cutoff for filters")
+    use_velocity_input: bool = Field(
+        True, description="Use current velocities as equivariant input"
+    )
+    include_velocity_norm: bool = Field(
+        True, description="Append |v| to scalar features"
+    )
+    # Stability / Ablation toggles (optional)
+    residual_scale_interaction: float = Field(1.0, description="Scale for interaction residual updates")
+    residual_scale_mixing: float = Field(1.0, description="Scale for mixing residual updates")
+    tanh_message_scale: Optional[float] = Field(
+        None, description="If set, apply tanh(x/s)*s to interaction messages"
+    )
+    tanh_mixing_scale: Optional[float] = Field(
+        None, description="If set, apply tanh to mixing deltas with this scale"
+    )
+    clip_scalar_msg_value: Optional[float] = Field(
+        None, description="Clamp aggregated scalar message to [-c, c]"
+    )
+    clip_vector_msg_norm: Optional[float] = Field(
+        None, description="Clamp aggregated vector message per-feature L2 norm"
+    )
+    clip_q_value: Optional[float] = Field(
+        None, description="Clamp scalar state q to [-c, c] after mixing"
+    )
+    clip_mu_norm: Optional[float] = Field(
+        None, description="Clamp vector state mu per-feature L2 norm after mixing"
+    )
+    filter_gain: float = Field(1.0, description="Global gain on filter_network outputs")
+    enable_debug_stats: bool = Field(
+        False,
+        description="Collect per-layer stats to locate explosions (logged by trainer)",
+    )
+
+
+class EgnnMcModelConfig(BaseConfig):
+    name: Literal["egnn_mc"] = "egnn_mc"
+    class_path: str = Field("models.egnn_mc.egnn_mc.EGNNMultiChannel")
+    num_layers: int = Field(6, description="Number of equivariant blocks")
+    hidden_node_dim: int = Field(192, description="Hidden width for node MLPs")
+    hidden_edge_dim: int = Field(192, description="Hidden width for edge MLPs")
+    hidden_coord_dim: int = Field(128, description="Hidden width for coordinate MLPs")
+    node_input_dim: int = Field(2, description="Number of scalar node inputs")
+    edge_attr_dim: int = Field(4, description="Number of edge attributes")
+    activation: str = Field("silu", description="Activation function name")
+    coords_weight: float = Field(1.0, description="Scaling for coordinate deltas")
+    recurrent: bool = Field(True, description="Use residual connection on nodes")
+    norm_diff: bool = Field(False, description="Normalise coordinate differences")
+    tanh: bool = Field(False, description="Clamp coordinate deltas with tanh")
+
 class GravityDatasetOtfConfig(BaseModel):
     dataset_name: str = Field(..., description="Name of the dataset")
     num_atoms: int = Field(5, description="Number of atoms")
@@ -131,6 +188,8 @@ MODEL_CONFIG_NAMES = {
     "cgenn": CGENNModelConfig,
     "equiformer_v2": EquiformerV2Config,
     "graph_transformer": GraphTransformerModelConfig,
+    "painn": PaiNNModelConfig,
+    "egnn_mc": EgnnMcModelConfig,
 }
 
 class CgennNBodyDataLoaderConfig(BaseConfig):
@@ -156,6 +215,19 @@ class GraphTransformerNBodyDataLoaderConfig(BaseConfig):
     gravity_dataset: GravityDatasetOtfConfig = Field(...)
 
 
+class PaiNNNBodyDataLoaderConfig(BaseConfig):
+    name: Literal["painn_nbody"] = "painn_nbody"
+    class_path: str = Field("dataloaders.PaiNNNBodyDataLoader")
+    batch_size: int = Field(128, description="Batch size for PaiNN training")
+    num_neighbors: int = Field(4, description="Number of neighbours per node")
+    gravity_dataset: GravityDatasetOtfConfig = Field(
+        ..., description="Gravity dataset configuration"
+    )
+    model_path: Optional[str] = Field(None, description="Optional checkpoint path")
+
+    model_config = {"protected_namespaces": ()}
+
+
 class SegnnNbodyOfflineDataLoaderConfig(BaseConfig):
     """Offline N-body dataset config for SEGNN."""
 
@@ -171,6 +243,19 @@ class SegnnNbodyOfflineDataLoaderConfig(BaseConfig):
     target: str = Field("pos_dt+vel", description="Training target for SEGNN")
 
 
+class EgnnMcNBodyDataLoaderConfig(BaseConfig):
+    name: Literal["egnn_mc_nbody"] = "egnn_mc_nbody"
+    class_path: str = Field("dataloaders.EgnnMcNBodyDataLoader")
+    batch_size: int = Field(128, description="Batch size for training")
+    num_neighbors: Optional[int] = Field(
+        None,
+        description="Number of neighbours per node (None falls back to fully connected)",
+    )
+    gravity_dataset: GravityDatasetOtfConfig = Field(
+        ..., description="Gravity dataset config"
+    )
+
+
 DATALOADER_CONFIG_NAMES = {
     "ponita_nbody": PonitaNBodyDataLoaderConfig,
     "segnn_nbody": SegnnNBodyDataLoaderConfig,
@@ -178,6 +263,8 @@ DATALOADER_CONFIG_NAMES = {
     "cgenn_nbody": CgennNBodyDataLoaderConfig,
     "equiformer_v2_nbody": EquiformerV2NBodyDataLoaderConfig,
     "graph_transformer_nbody": GraphTransformerNBodyDataLoaderConfig,
+    "painn_nbody": PaiNNNBodyDataLoaderConfig,
+    "egnn_mc_nbody": EgnnMcNBodyDataLoaderConfig,
 }
 
 
@@ -235,6 +322,15 @@ class BaseTrainerConfig(BaseConfig):
         description="If configured, validation set will be used",
     )
     seed: Optional[int] = Field(None, description="Seed for whole operation.")
+    # Diagnostics / stability logging
+    debug_layer_stats_every: Optional[int] = Field(
+        None,
+        description="If set, log per-layer activation/message stats every N steps",
+    )
+    abort_on_nan_activations: bool = Field(
+        False,
+        description="Abort optimizer step if model reports NaN/Inf activations",
+    )
     clip_gradients_norm: Optional[float] = Field(
         None,
         description="During training, this is the max allowed value of norm of all gradients",
