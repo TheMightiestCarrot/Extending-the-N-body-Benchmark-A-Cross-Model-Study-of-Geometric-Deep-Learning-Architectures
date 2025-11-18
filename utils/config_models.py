@@ -147,6 +147,22 @@ class EgnnMcModelConfig(BaseConfig):
     norm_diff: bool = Field(False, description="Normalise coordinate differences")
     tanh: bool = Field(False, description="Clamp coordinate deltas with tanh")
 
+
+class HEGNNModelConfig(BaseConfig):
+    name: Literal["hegnn"] = "hegnn"
+    class_path: str = Field("models.HEGNN.HEGNN.HEGNN")
+    num_layers: int = Field(6, description="Number of message-passing layers")
+    node_input_dim: int = Field(4, description="Scalar node feature size")
+    edge_attr_dim: int = Field(32, description="Radial basis dimension")
+    hidden_dim: int = Field(192, description="Hidden feature size")
+    max_ell: int = Field(3, description="Maximum spherical harmonic degree")
+    radial_cutoff: float = Field(10.0, description="Cutoff radius for radial basis")
+    envelope_power: int = Field(5, description="Envelope smoothness power")
+    activation: str = Field(
+        "silu",
+        description="Activation function name (silu|relu|gelu|tanh)",
+    )
+
 class GravityDatasetOtfConfig(BaseModel):
     dataset_name: str = Field(..., description="Name of the dataset")
     num_atoms: int = Field(5, description="Number of atoms")
@@ -190,6 +206,7 @@ MODEL_CONFIG_NAMES = {
     "graph_transformer": GraphTransformerModelConfig,
     "painn": PaiNNModelConfig,
     "egnn_mc": EgnnMcModelConfig,
+    "hegnn": HEGNNModelConfig,
 }
 
 class CgennNBodyDataLoaderConfig(BaseConfig):
@@ -256,6 +273,18 @@ class EgnnMcNBodyDataLoaderConfig(BaseConfig):
     )
 
 
+class HEGNNNBodyDataLoaderConfig(BaseConfig):
+    name: Literal["hegnn_nbody"] = "hegnn_nbody"
+    class_path: str = Field("dataloaders.HEGNNNBodyDataLoader")
+    batch_size: int = Field(64, description="Batch size for HEGNN training")
+    num_neighbors: int = Field(4, description="Number of neighbours per node")
+    gravity_dataset: GravityDatasetOtfConfig = Field(
+        ..., description="Gravity dataset configuration"
+    )
+
+    model_config = {"protected_namespaces": ()}
+
+
 DATALOADER_CONFIG_NAMES = {
     "ponita_nbody": PonitaNBodyDataLoaderConfig,
     "segnn_nbody": SegnnNBodyDataLoaderConfig,
@@ -265,6 +294,7 @@ DATALOADER_CONFIG_NAMES = {
     "graph_transformer_nbody": GraphTransformerNBodyDataLoaderConfig,
     "painn_nbody": PaiNNNBodyDataLoaderConfig,
     "egnn_mc_nbody": EgnnMcNBodyDataLoaderConfig,
+    "hegnn_nbody": HEGNNNBodyDataLoaderConfig,
 }
 
 

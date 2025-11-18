@@ -145,6 +145,24 @@ def run_inference(
             graph.rel_pos = pos_send - pos_receive
             graph.to(device)
             pred = model(graph)
+        elif model_type == "hegnn":
+            loc, vel, force, mass = data
+            graph = Data(pos=loc, vel=vel, force=force, mass=mass)
+            graph.batch = batch.long()
+            graph.edge_index = build_graph_with_knn(
+                loc, batch_size, n_nodes, device, num_neighbors
+            )
+            speed = torch.linalg.norm(graph.vel, dim=-1, keepdim=True)
+            kinetic = 0.5 * graph.mass * speed.square()
+            ones = torch.ones_like(speed)
+            graph.node_feat = torch.cat([graph.mass, speed, kinetic, ones], dim=-1)
+            row, col = graph.edge_index
+            rel_pos = graph.pos[row] - graph.pos[col]
+            graph.rel_pos = rel_pos
+            graph.edge_length = torch.linalg.norm(rel_pos, dim=-1, keepdim=True)
+            graph = graph.to(device)
+            pred = model(graph)
+
         elif model_type == "cgenn":
 
             data, _ = dataloader.get_batch()

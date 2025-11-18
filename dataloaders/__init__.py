@@ -6,6 +6,7 @@ from dataloaders.segnn_nbody_offline_dataloader import SegnnNbodyOfflineDataload
 from dataloaders.graph_transformer_n_body_dataloader import GraphTransformerNBodyDataLoader
 from dataloaders.painn_n_body_dataloader import PaiNNNBodyDataLoader
 from dataloaders.egnn_mc_n_body_dataloader import EgnnMcNBodyDataLoader
+from dataloaders.hegnn_n_body_dataloader import HEGNNNBodyDataLoader
 
 __all__ = [
     "CgennNBodyDataLoader",
@@ -16,4 +17,5 @@ __all__ = [
     "GraphTransformerNBodyDataLoader",
     "PaiNNNBodyDataLoader",
     "EgnnMcNBodyDataLoader",
+    "HEGNNNBodyDataLoader",
 ]

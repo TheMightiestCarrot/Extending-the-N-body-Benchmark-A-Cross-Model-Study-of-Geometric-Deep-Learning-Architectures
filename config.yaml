@@ -75,6 +75,17 @@ models:
     use_s2_act_attn: False
     ffn_activation: "scaled_silu"
 
+  hegnn:
+    class_path: models.HEGNN.HEGNN.HEGNN
+    num_layers: 6
+    node_input_dim: 4
+    edge_attr_dim: 32
+    hidden_dim: 192
+    max_ell: 3
+    radial_cutoff: 10.0
+    envelope_power: 5
+    activation: silu
+
 dataloaders:
   graph_transformer_nbody:
     class_path: dataloaders.GraphTransformerNBodyDataLoader
@@ -162,6 +173,17 @@ dataloaders:
     class_path: dataloaders.EgnnMcNBodyDataLoader
     batch_size: 64
     num_neighbors: null
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+
+  hegnn_nbody:
+    class_path: dataloaders.HEGNNNBodyDataLoader
+    batch_size: 64
+    num_neighbors: 4
     gravity_dataset:
       center_of_mass: False
       dataset_name: nbody_small

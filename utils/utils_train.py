@@ -1,9 +1,10 @@
 import importlib
 
-from e3nn.o3 import Irreps
+import torch.nn as nn
 
 from models import (
     EGNNMultiChannel,
+    HEGNN,
     PONITA_NBODY,
     SEGNN,
     GraphTransformerTorch,
@@ -130,6 +131,33 @@ def create_model(args, train_dataloader=None):
             norm_diff=getattr(args, "norm_diff", False),
             tanh=getattr(args, "tanh", False),
             device=get_device(args.gpu_id),
+        )
+    elif args.model_type == "hegnn":
+        act_name = getattr(args, "activation", "silu").lower()
+        activation_map = {
+            "silu": nn.SiLU,
+            "relu": nn.ReLU,
+            "gelu": nn.GELU,
+            "tanh": nn.Tanh,
+        }
+        if act_name not in activation_map:
+            raise ValueError(f"Unsupported activation '{act_name}' for HEGNN.")
+        targets = tuple(
+            args.target.split("+")
+        ) if hasattr(args, "target") and isinstance(args.target, str) else ("pos_dt", "vel")
+        model = HEGNN(
+            num_layers=getattr(args, "num_layers", 6),
+            node_input_dim=getattr(args, "node_input_dim", 4),
+            edge_attr_dim=getattr(args, "edge_attr_dim", 32),
+            hidden_dim=getattr(
+                args, "hidden_dim", getattr(args, "hidden_features", 192)
+            ),
+            max_ell=getattr(args, "max_ell", 3),
+            radial_cutoff=getattr(args, "radial_cutoff", 10.0),
+            envelope_power=getattr(args, "envelope_power", 5),
+            activation=activation_map[act_name](),
+            device=get_device(args.gpu_id),
+            targets=targets,
         )
     else:
         raise ValueError(f"Unknown model {args.model_type}")

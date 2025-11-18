@@ -5,3 +5,4 @@ from models.equiformer_v2.architecture.equiformer_v2_nbody import EquiformerV2_n
 from models.graph_transformer.graph_transformer_torch import GraphTransformerTorch
 from models.PaiNN.PaiNN import PaiNN
 from models.egnn_mc.egnn_mc import EGNNMultiChannel
+from models.HEGNN.HEGNN import HEGNN
