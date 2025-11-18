@@ -158,6 +158,7 @@ def create_model(args, train_dataloader=None):
             activation=activation_map[act_name](),
             device=get_device(args.gpu_id),
             targets=targets,
+            gate_tanh_scale=getattr(args, "gate_tanh_scale", None),
         )
     else:
         raise ValueError(f"Unknown model {args.model_type}")

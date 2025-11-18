@@ -162,6 +162,10 @@ class HEGNNModelConfig(BaseConfig):
         "silu",
         description="Activation function name (silu|relu|gelu|tanh)",
     )
+    gate_tanh_scale: Optional[float] = Field(
+        None,
+        description="If set, apply scaled tanh clamp to pos/vel gate outputs",
+    )
 
 class GravityDatasetOtfConfig(BaseModel):
     dataset_name: str = Field(..., description="Name of the dataset")

@@ -36,9 +36,13 @@ class HEGNN_Layer(nn.Module):
         hidden_dim: int,
         sh_irreps: e3nn.o3.Irreps,
         activation: nn.Module = nn.SiLU(),
+        gate_tanh_scale: float | None = None,
     ):
         super().__init__()
         self.sh_irreps = sh_irreps
+        if gate_tanh_scale is not None and gate_tanh_scale <= 0:
+            raise ValueError("gate_tanh_scale must be positive when provided.")
+        self.gate_tanh_scale = gate_tanh_scale
         MLP = partial(BaseMLP, hidden_dim=hidden_dim, activation=activation)
 
         # Invariant scalar message (includes per-degree inner products)
@@ -110,6 +114,10 @@ class HEGNN_Layer(nn.Module):
         # Vector heads: produce invariant gates -> equivariant vectors via bases
         pos_gates = self.mlp_pos_basis(msg)  # (E, 2)
         vel_gates = self.mlp_vel_basis(msg)  # (E, 2)
+        if self.gate_tanh_scale is not None:
+            scale = self.gate_tanh_scale
+            pos_gates = torch.tanh(pos_gates / scale) * scale
+            vel_gates = torch.tanh(vel_gates / scale) * scale
 
         # Equivariant edge vectors
         edge_vec_pos = (
@@ -192,9 +200,13 @@ class HEGNN(nn.Module):
         activation: nn.Module = nn.SiLU(),
         device: str = "cpu",
         targets: Sequence[str] | Tuple[str, ...] = ("pos_dt", "vel"),
+        gate_tanh_scale: float | None = None,
     ):
         super().__init__()
         self.num_layers = num_layers
+        if gate_tanh_scale is not None and gate_tanh_scale <= 0:
+            raise ValueError("gate_tanh_scale must be positive when provided.")
+        self.gate_tanh_scale = gate_tanh_scale
         self.embedding = nn.Linear(node_input_dim, hidden_dim)
         self.radial_basis = SmoothBesselBasis(
             num_basis=edge_attr_dim, cutoff=radial_cutoff, envelope_power=envelope_power
@@ -208,6 +220,7 @@ class HEGNN(nn.Module):
                     hidden_dim,
                     self.sh_init.sh_irreps,
                     activation=activation,
+                    gate_tanh_scale=gate_tanh_scale,
                 )
                 for _ in range(num_layers)
             ]
@@ -245,6 +258,9 @@ class HEGNN(nn.Module):
             "radial_cutoff": float(self.radial_basis.cutoff),
             "envelope_power": self.radial_basis.envelope_power,
             "targets": list(self.targets),
+            "gate_tanh_scale": (
+                float(self.gate_tanh_scale) if self.gate_tanh_scale is not None else None
+            ),
         }
 
     def forward(self, data, batch=None) -> torch.Tensor:
