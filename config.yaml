@@ -85,6 +85,7 @@ models:
     radial_cutoff: 10.0
     envelope_power: 5
     activation: silu
+    gate_tanh_scale: 5
 
 dataloaders:
   graph_transformer_nbody:
