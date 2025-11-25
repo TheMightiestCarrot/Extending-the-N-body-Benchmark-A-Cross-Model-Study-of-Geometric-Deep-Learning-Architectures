@@ -9,6 +9,7 @@ from models import (
     SEGNN,
     GraphTransformerTorch,
     PaiNN,
+    PlatonicTransformerNBody,
 )
 from models.CGENN.nbody_cgenn import NBodyCGENN
 from models.equiformer_v2.architecture.equiformer_v2_nbody import (
@@ -159,6 +160,34 @@ def create_model(args, train_dataloader=None):
             device=get_device(args.gpu_id),
             targets=targets,
             gate_tanh_scale=getattr(args, "gate_tanh_scale", None),
+        )
+    elif args.model_type == "platonic_transformer":
+        targets = tuple(
+            args.target.split("+")
+        ) if hasattr(args, "target") and isinstance(args.target, str) else ("pos_dt", "vel")
+        model = PlatonicTransformerNBody(
+            hidden_dim=getattr(args, "hidden_dim", 128),
+            num_layers=getattr(args, "num_layers", 6),
+            num_heads=getattr(args, "num_heads", 4),
+            solid_name=getattr(args, "solid_name", "icosahedron"),
+            input_dim=getattr(args, "input_dim", 1),
+            input_dim_vec=getattr(args, "input_dim_vec", 1),
+            scalar_task_level=getattr(args, "scalar_task_level", "node"),
+            vector_task_level=getattr(args, "vector_task_level", "node"),
+            dense_mode=getattr(args, "dense_mode", False),
+            ffn_readout=getattr(args, "ffn_readout", True),
+            mean_aggregation=getattr(args, "mean_aggregation", False),
+            dropout=getattr(args, "dropout", 0.1),
+            drop_path_rate=getattr(args, "drop_path_rate", 0.0),
+            ffn_dim_factor=getattr(args, "ffn_dim_factor", 4),
+            rope_sigma=getattr(args, "rope_sigma", 1.0),
+            ape_sigma=getattr(args, "ape_sigma", None),
+            learned_freqs=getattr(args, "learned_freqs", True),
+            freq_init=getattr(args, "freq_init", "random"),
+            use_key=getattr(args, "use_key", False),
+            attention=getattr(args, "attention", False),
+            spatial_dim=getattr(args, "spatial_dim", 3),
+            args=args,
         )
     else:
         raise ValueError(f"Unknown model {args.model_type}")

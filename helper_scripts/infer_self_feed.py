@@ -193,6 +193,13 @@ def run_inference(
             graph.edge_index = build_graph_with_knn(loc, batch_size, n_nodes, device, num_neighbors)
             graph = graph.to(device)
             pred = model(graph)
+        elif model_type == "platonic_transformer":
+            # PlatonicTransformer expects a PyG Data with pos/vel/mass and batch
+            loc, vel, force, mass = data
+            graph = Data(pos=loc, vel=vel, force=force, mass=mass)
+            graph.batch = batch.long()
+            graph = graph.to(device)
+            pred = model(graph)
         else:
             data = (data[0], data[1], data[2], data[3], data[0])
             data = tuple(d for d in data)

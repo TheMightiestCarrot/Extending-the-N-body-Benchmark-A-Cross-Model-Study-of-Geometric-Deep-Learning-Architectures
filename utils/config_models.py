@@ -167,6 +167,43 @@ class HEGNNModelConfig(BaseConfig):
         description="If set, apply scaled tanh clamp to pos/vel gate outputs",
     )
 
+
+class PlatonicTransformerModelConfig(BaseConfig):
+    name: Literal["platonic_transformer"] = "platonic_transformer"
+    class_path: str = Field(
+        "models.platonic_transformer.platonic_transformer_nbody.PlatonicTransformerNBody"
+    )
+    hidden_dim: int = Field(144, description="Hidden channel size; must be divisible by group order")
+    num_layers: int = Field(6, description="Number of Platonic blocks")
+    num_heads: int = Field(4, description="Number of attention heads")
+    solid_name: str = Field(
+        "octahedron",
+        description="Platonic solid name: tetrahedron|octahedron|icosahedron (hidden_dim must be multiple of |G|)",
+    )
+    input_dim: int = Field(1, description="Scalar input features (default: mass)")
+    input_dim_vec: int = Field(1, description="Vector input features (default: velocity)")
+    scalar_task_level: str = Field(
+        "node", description="Pooling level for scalar outputs (node or graph)"
+    )
+    vector_task_level: str = Field(
+        "node", description="Pooling level for vector outputs (node or graph)"
+    )
+    dense_mode: bool = Field(False, description="Force dense (padded) attention mode")
+    ffn_readout: bool = Field(True, description="Use 2-layer FFN readout heads")
+    mean_aggregation: bool = Field(False, description="Mean instead of sum pooling")
+    dropout: float = Field(0.1, description="Dropout rate")
+    drop_path_rate: float = Field(0.0, description="Stochastic depth rate")
+    ffn_dim_factor: int = Field(4, description="Hidden expansion in FFN")
+    rope_sigma: float = Field(1.0, description="RoPE frequency scale; disable with None")
+    ape_sigma: Optional[float] = Field(
+        None, description="Absolute position embedding scale; disable with None"
+    )
+    learned_freqs: bool = Field(True, description="Learnable RoPE frequencies")
+    freq_init: str = Field("random", description="RoPE frequency init (random|linear)")
+    use_key: bool = Field(False, description="Use key vectors in attention")
+    attention: bool = Field(False, description="Enable dot-product attention path")
+    spatial_dim: int = Field(3, description="Spatial dimension of positions")
+
 class GravityDatasetOtfConfig(BaseModel):
     dataset_name: str = Field(..., description="Name of the dataset")
     num_atoms: int = Field(5, description="Number of atoms")
@@ -211,6 +248,7 @@ MODEL_CONFIG_NAMES = {
     "painn": PaiNNModelConfig,
     "egnn_mc": EgnnMcModelConfig,
     "hegnn": HEGNNModelConfig,
+    "platonic_transformer": PlatonicTransformerModelConfig,
 }
 
 class CgennNBodyDataLoaderConfig(BaseConfig):
@@ -289,6 +327,17 @@ class HEGNNNBodyDataLoaderConfig(BaseConfig):
     model_config = {"protected_namespaces": ()}
 
 
+class PlatonicTransformerNBodyDataLoaderConfig(BaseConfig):
+    name: Literal["platonic_transformer_nbody"] = "platonic_transformer_nbody"
+    class_path: str = Field(
+        "dataloaders.PlatonicTransformerNBodyDataLoader"
+    )
+    batch_size: int = Field(128, description="Batch size for training")
+    gravity_dataset: GravityDatasetOtfConfig = Field(
+        ..., description="Gravity dataset configuration"
+    )
+
+
 DATALOADER_CONFIG_NAMES = {
     "ponita_nbody": PonitaNBodyDataLoaderConfig,
     "segnn_nbody": SegnnNBodyDataLoaderConfig,
@@ -299,6 +348,7 @@ DATALOADER_CONFIG_NAMES = {
     "painn_nbody": PaiNNNBodyDataLoaderConfig,
     "egnn_mc_nbody": EgnnMcNBodyDataLoaderConfig,
     "hegnn_nbody": HEGNNNBodyDataLoaderConfig,
+    "platonic_transformer_nbody": PlatonicTransformerNBodyDataLoaderConfig,
 }
 
 

@@ -7,6 +7,9 @@ from dataloaders.graph_transformer_n_body_dataloader import GraphTransformerNBod
 from dataloaders.painn_n_body_dataloader import PaiNNNBodyDataLoader
 from dataloaders.egnn_mc_n_body_dataloader import EgnnMcNBodyDataLoader
 from dataloaders.hegnn_n_body_dataloader import HEGNNNBodyDataLoader
+from dataloaders.platonic_transformer_n_body_dataloader import (
+    PlatonicTransformerNBodyDataLoader,
+)
 
 __all__ = [
     "CgennNBodyDataLoader",
@@ -18,4 +21,5 @@ __all__ = [
     "PaiNNNBodyDataLoader",
     "EgnnMcNBodyDataLoader",
     "HEGNNNBodyDataLoader",
+    "PlatonicTransformerNBodyDataLoader",
 ]

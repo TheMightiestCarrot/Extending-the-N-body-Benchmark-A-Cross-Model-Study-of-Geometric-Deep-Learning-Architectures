@@ -87,6 +87,30 @@ models:
     activation: silu
     gate_tanh_scale: 5
 
+  platonic_transformer:
+    class_path: models.platonic_transformer.platonic_transformer_nbody.PlatonicTransformerNBody
+    hidden_dim: 144
+    num_layers: 6
+    num_heads: 4
+    solid_name: octahedron
+    input_dim: 1
+    input_dim_vec: 1
+    scalar_task_level: node
+    vector_task_level: node
+    dense_mode: False
+    ffn_readout: True
+    mean_aggregation: False
+    dropout: 0.1
+    drop_path_rate: 0.0
+    ffn_dim_factor: 4
+    rope_sigma: 1.0
+    ape_sigma: null
+    learned_freqs: True
+    freq_init: random
+    use_key: False
+    attention: False
+    spatial_dim: 3
+
 dataloaders:
   graph_transformer_nbody:
     class_path: dataloaders.GraphTransformerNBodyDataLoader
@@ -185,6 +209,16 @@ dataloaders:
     class_path: dataloaders.HEGNNNBodyDataLoader
     batch_size: 64
     num_neighbors: 4
+    gravity_dataset:
+      center_of_mass: False
+      dataset_name: nbody_small
+      num_atoms: 5
+      sample_freq: 10
+      target: pos_dt+vel
+
+  platonic_transformer_nbody:
+    class_path: dataloaders.PlatonicTransformerNBodyDataLoader
+    batch_size: 64
     gravity_dataset:
       center_of_mass: False
       dataset_name: nbody_small

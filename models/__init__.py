@@ -6,3 +6,4 @@ from models.graph_transformer.graph_transformer_torch import GraphTransformerTor
 from models.PaiNN.PaiNN import PaiNN
 from models.egnn_mc.egnn_mc import EGNNMultiChannel
 from models.HEGNN.HEGNN import HEGNN
+from models.platonic_transformer import PlatonicTransformerNBody
